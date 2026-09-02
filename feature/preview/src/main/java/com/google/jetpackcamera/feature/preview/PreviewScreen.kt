@@ -93,6 +93,8 @@ import com.google.jetpackcamera.ui.components.capture.StabilizationIcon
 import com.google.jetpackcamera.ui.components.capture.TestableSnackbar
 import com.google.jetpackcamera.ui.components.capture.VIDEO_QUALITY_TAG
 import com.google.jetpackcamera.ui.components.capture.VideoQualityIcon
+import com.google.jetpackcamera.ui.components.capture.ManualControlsPanel
+import com.google.jetpackcamera.ui.components.capture.ProModeToggle
 import com.google.jetpackcamera.ui.components.capture.ZoomButtonRow
 import com.google.jetpackcamera.ui.components.capture.ZoomStateManager
 import com.google.jetpackcamera.ui.components.capture.debouncedOrientationFlow
@@ -105,6 +107,7 @@ import com.google.jetpackcamera.ui.controller.CaptureController
 import com.google.jetpackcamera.ui.controller.ImageWellController
 import com.google.jetpackcamera.ui.controller.ScreenFlashController
 import com.google.jetpackcamera.ui.controller.SnackBarController
+import com.google.jetpackcamera.ui.controller.ManualControlsController
 import com.google.jetpackcamera.ui.controller.ZoomController
 import com.google.jetpackcamera.ui.controller.quicksettings.QuickSettingsController
 import com.google.jetpackcamera.ui.debug.DebugController
@@ -116,6 +119,7 @@ import com.google.jetpackcamera.ui.uistate.capture.CaptureButtonUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.ImageWellUiState
+import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomUiState
 import com.google.jetpackcamera.ui.uistate.capture.compound.CaptureUiState
@@ -222,7 +226,8 @@ fun PreviewScreen(
             imageWellController = viewModel.imageWellController,
             cameraController = viewModel.cameraController,
             screenFlashController = viewModel.screenFlashController,
-            zoomController = viewModel.zoomController
+            zoomController = viewModel.zoomController,
+            manualControlsController = viewModel.manualControlsController
         )
         val readStoragePermission: PermissionState = rememberPermissionState(
             Manifest.permission.READ_EXTERNAL_STORAGE
@@ -256,7 +261,8 @@ private fun ContentScreen(
     imageWellController: ImageWellController? = null,
     cameraController: CameraController? = null,
     screenFlashController: ScreenFlashController? = null,
-    zoomController: ZoomController? = null
+    zoomController: ZoomController? = null,
+    manualControlsController: ManualControlsController? = null
 ) {
     val currentCaptureUiStateProvider by rememberUpdatedState(captureUiStateProvider)
     val flipLensState =
@@ -265,6 +271,9 @@ private fun ContentScreen(
         derivedStateOf { currentCaptureUiStateProvider().zoomControlUiState }
     }
     val zoomUiState = remember { derivedStateOf { currentCaptureUiStateProvider().zoomUiState } }
+    val manualControlsState = remember {
+        derivedStateOf { currentCaptureUiStateProvider().manualControlsUiState }
+    }
     val videoRecordingState = remember {
         derivedStateOf {
             currentCaptureUiStateProvider().videoRecordingState
@@ -512,20 +521,43 @@ private fun ContentScreen(
         }
     }
 
-    val zoomLevelDisplayLambda = remember(zoomControlState) {
+    val zoomLevelDisplayLambda = remember(
+        zoomControlState,
+        manualControlsState,
+        manualControlsController
+    ) {
         @Composable { modifier: Modifier ->
             Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-                ZoomButtonRow(
-                    zoomControlUiState = zoomControlState.value,
-                    onChangeZoom = { targetZoom ->
-                        scope.launch {
-                            zoomStateManager.animatedZoom(
-                                targetZoomLevel = targetZoom,
-                                lensToZoom = LensToZoom.PRIMARY
-                            )
-                        }
-                    }
+                // Pro (manual) controls: live readout + sliders, Pixel-style, above the zoom row.
+                ManualControlsPanel(
+                    manualControlsUiState = manualControlsState.value,
+                    controller = manualControlsController
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ZoomButtonRow(
+                        zoomControlUiState = zoomControlState.value,
+                        onChangeZoom = { targetZoom ->
+                            scope.launch {
+                                zoomStateManager.animatedZoom(
+                                    targetZoomLevel = targetZoom,
+                                    lensToZoom = LensToZoom.PRIMARY
+                                )
+                            }
+                        }
+                    )
+                    ProModeToggle(
+                        manualControlsUiState = manualControlsState.value,
+                        onToggle = {
+                            val enabled = (
+                                manualControlsState.value as? ManualControlsUiState.Available
+                                )?.isProModeEnabled ?: false
+                            manualControlsController?.setProModeEnabled(!enabled)
+                        }
+                    )
+                }
             }
         }
     }

@@ -63,9 +63,12 @@ import com.google.jetpackcamera.model.LensToZoom
 import com.google.jetpackcamera.model.LowLightBoostAvailability
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.LowLightBoostState
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
+import com.google.jetpackcamera.model.TARGET_FPS_120
 import com.google.jetpackcamera.model.TARGET_FPS_15
+import com.google.jetpackcamera.model.TARGET_FPS_24
 import com.google.jetpackcamera.model.TARGET_FPS_30
 import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
@@ -253,8 +256,8 @@ class CameraXCameraSystem(
                         val unsupportedStabilizationFpsMap = buildMap {
                             for (stabilizationMode in supportedStabilizationModes) {
                                 when (stabilizationMode) {
-                                    StabilizationMode.ON -> setOf(TARGET_FPS_15, TARGET_FPS_60)
-                                    StabilizationMode.HIGH_QUALITY -> setOf(TARGET_FPS_60)
+                                    StabilizationMode.ON -> setOf(TARGET_FPS_15, TARGET_FPS_60, TARGET_FPS_120)
+                                    StabilizationMode.HIGH_QUALITY -> setOf(TARGET_FPS_60, TARGET_FPS_120)
                                     StabilizationMode.OPTICAL -> emptySet()
                                     else -> null
                                 }?.let { put(stabilizationMode, it) }
@@ -276,6 +279,14 @@ class CameraXCameraSystem(
                         } else {
                             setOf(TestPattern.Off)
                         }
+
+                        val manualCapabilities = camInfo.manualCapabilities
+                        val physicalLenses = camInfo.physicalLenses(application)
+                        Log.d(
+                            TAG,
+                            "Lens $lensFacing: manual=$manualCapabilities lenses=" +
+                                physicalLenses.map { it.zoomRatio }
+                        )
 
                         put(
                             lensFacing,
@@ -299,7 +310,9 @@ class CameraXCameraSystem(
                                 supportedFlashModes = supportedFlashModes,
                                 supportedZoomRange = supportedZoomRange,
                                 unsupportedStabilizationFpsMap = unsupportedStabilizationFpsMap,
-                                supportedTestPatterns = supportedTestPatterns
+                                supportedTestPatterns = supportedTestPatterns,
+                                manualCapabilities = manualCapabilities,
+                                physicalLenses = physicalLenses
                             )
                         )
                     }
@@ -428,7 +441,13 @@ class CameraXCameraSystem(
                     flashMode = currentCameraSettings.flashMode,
                     primaryLensFacing = currentCameraSettings.cameraLensFacing,
                     zoomRatios = currentCameraSettings.defaultZoomRatios,
-                    testPattern = currentCameraSettings.debugSettings.testPattern
+                    testPattern = currentCameraSettings.debugSettings.testPattern,
+                    // Clamp to the active lens' capabilities so a value chosen on the rear lens
+                    // never produces an illegal request on the front lens.
+                    manualControls = systemConstraints.forCurrentLens(currentCameraSettings)
+                        ?.manualCapabilities
+                        ?.sanitize(currentCameraSettings.manualControls)
+                        ?: ManualControls.AUTO
                 )
 
                 when (currentCameraSettings.concurrentCameraMode) {
@@ -715,6 +734,21 @@ class CameraXCameraSystem(
     override fun setTestPattern(newTestPattern: TestPattern) {
         currentSettings.update { old ->
             old?.copy(debugSettings = old.debugSettings.copy(testPattern = newTestPattern)) ?: old
+        }
+    }
+
+    override fun setManualControls(manualControls: ManualControls) {
+        currentSettings.update { old ->
+            old?.copy(manualControls = manualControls)
+        }
+    }
+
+    override suspend fun setProModeEnabled(enabled: Boolean) {
+        currentSettings.update { old ->
+            old?.copy(
+                isProModeEnabled = enabled,
+                manualControls = if (enabled) old.manualControls else ManualControls.AUTO
+            )
         }
     }
 
@@ -1113,6 +1147,6 @@ class CameraXCameraSystem(
             return ProcessCameraProvider.awaitInstance(context)
         }
 
-        private val FIXED_FRAME_RATES = setOf(TARGET_FPS_15, TARGET_FPS_30, TARGET_FPS_60)
+        private val FIXED_FRAME_RATES = setOf(TARGET_FPS_15, TARGET_FPS_24, TARGET_FPS_30, TARGET_FPS_60, TARGET_FPS_120)
     }
 }

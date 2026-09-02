@@ -17,8 +17,10 @@ package com.google.jetpackcamera.model
 
 const val TARGET_FPS_AUTO = 0
 const val TARGET_FPS_15 = 15
+const val TARGET_FPS_24 = 24
 const val TARGET_FPS_30 = 30
 const val TARGET_FPS_60 = 60
+const val TARGET_FPS_120 = 120
 
 /**
  * This constant is `0L` because the `DURATION_UNLIMITED`

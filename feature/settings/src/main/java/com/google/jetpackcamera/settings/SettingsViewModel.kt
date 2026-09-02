@@ -32,7 +32,9 @@ import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
+import com.google.jetpackcamera.model.TARGET_FPS_120
 import com.google.jetpackcamera.model.TARGET_FPS_15
+import com.google.jetpackcamera.model.TARGET_FPS_24
 import com.google.jetpackcamera.model.TARGET_FPS_30
 import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
@@ -62,7 +64,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val TAG = "SettingsViewModel"
-private val fpsOptions = setOf(TARGET_FPS_15, TARGET_FPS_30, TARGET_FPS_60)
+private val fpsOptions =
+    linkedSetOf(TARGET_FPS_15, TARGET_FPS_24, TARGET_FPS_30, TARGET_FPS_60, TARGET_FPS_120)
 
 /**
  * [ViewModel] for [SettingsScreen].
@@ -625,7 +628,10 @@ class SettingsViewModel @Inject constructor(
             fpsAutoState = SingleSelectableState.Selectable,
             fpsFifteenState = optionConstraintRationale[TARGET_FPS_15]!!,
             fpsThirtyState = optionConstraintRationale[TARGET_FPS_30]!!,
-            fpsSixtyState = optionConstraintRationale[TARGET_FPS_60]!!
+            fpsSixtyState = optionConstraintRationale[TARGET_FPS_60]!!,
+            fpsOptionStates = fpsOptions.associateWithTo(LinkedHashMap()) { fpsOption ->
+                optionConstraintRationale[fpsOption]!!
+            }
         )
     }
 

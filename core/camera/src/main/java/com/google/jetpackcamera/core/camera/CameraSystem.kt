@@ -29,6 +29,7 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
@@ -122,6 +123,19 @@ interface CameraSystem {
      * @param newTestPattern The new test pattern to apply.
      */
     fun setTestPattern(newTestPattern: TestPattern)
+
+    /**
+     * Replaces the current Pro/manual controls (ISO, shutter, EV, WB, focus, AE/AWB lock).
+     * Values outside the active lens' capabilities are clamped or ignored.
+     *
+     * @param manualControls The new [ManualControls]; use [ManualControls.AUTO] to reset.
+     */
+    fun setManualControls(manualControls: ManualControls)
+
+    /**
+     * Enables or disables the Pro controls panel. Disabling resets controls to [ManualControls.AUTO].
+     */
+    suspend fun setProModeEnabled(enabled: Boolean)
 
     /**
      * Returns a [StateFlow] of the current [CameraState].

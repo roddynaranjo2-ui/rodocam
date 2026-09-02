@@ -46,12 +46,14 @@ import com.google.jetpackcamera.ui.components.capture.R
 import com.google.jetpackcamera.ui.controller.CameraController
 import com.google.jetpackcamera.ui.controller.CaptureController
 import com.google.jetpackcamera.ui.controller.ImageWellController
+import com.google.jetpackcamera.ui.controller.ManualControlsController
 import com.google.jetpackcamera.ui.controller.ScreenFlashController
 import com.google.jetpackcamera.ui.controller.SnackBarController
 import com.google.jetpackcamera.ui.controller.ZoomController
 import com.google.jetpackcamera.ui.controller.impl.CameraControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.CaptureControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.ImageWellControllerImpl
+import com.google.jetpackcamera.ui.controller.impl.ManualControlsControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.QuickSettingsControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.ScreenFlashControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.SnackBarControllerImpl
@@ -195,6 +197,16 @@ class PreviewViewModel @Inject constructor(
     val zoomController: ZoomController = ZoomControllerImpl(
         cameraSystem = cameraSystemRepository.cameraSystem,
         trackedCaptureUiState = trackedCaptureUiState
+    )
+
+    /**
+     * Controller for the Pro (manual) camera controls panel.
+     */
+    val manualControlsController: ManualControlsController = ManualControlsControllerImpl(
+        cameraSystem = cameraSystemRepository.cameraSystem,
+        trackedCaptureUiState = trackedCaptureUiState,
+        coroutineContext = viewModelScope.coroutineContext,
+        onProModeEnabledPersist = settingsRepository::updateProModeEnabled
     )
 
     val imageWellController: ImageWellController = ImageWellControllerImpl(

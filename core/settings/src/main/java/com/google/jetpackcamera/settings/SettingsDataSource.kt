@@ -113,4 +113,9 @@ interface SettingsDataSource {
      * Updates the default concurrent camera mode.
      */
     suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode)
+
+    /**
+     * Updates whether Pro mode (manual controls panel) is enabled by default.
+     */
+    suspend fun updateProModeEnabled(isProModeEnabled: Boolean)
 }

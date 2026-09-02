@@ -42,6 +42,7 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraState as CXCameraState
+import androidx.camera.core.ExperimentalZeroShutterLag
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.TorchState
@@ -72,11 +73,13 @@ import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.model.DynamicRange
+import com.google.jetpackcamera.model.ExposureInfo
 import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.Illuminant
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostState
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
@@ -86,6 +89,7 @@ import com.google.jetpackcamera.model.VideoQuality.FHD
 import com.google.jetpackcamera.model.VideoQuality.HD
 import com.google.jetpackcamera.model.VideoQuality.SD
 import com.google.jetpackcamera.model.VideoQuality.UHD
+import com.google.jetpackcamera.model.WhiteBalanceMode
 import com.google.jetpackcamera.settings.model.CameraConstraints
 import java.io.File
 import java.io.FileNotFoundException
@@ -94,6 +98,7 @@ import javax.inject.Provider
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.atomicfu.AtomicLong
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -513,7 +518,10 @@ private suspend fun updateCamera2RequestOptions(
             }
 
             else -> {
-                optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE)
+                // Manual exposure owns CONTROL_AE_MODE (OFF); don't wipe it on a flash change.
+                if (!newTransientSettings.manualControls.isManualExposure) {
+                    optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE)
+                }
             }
         }
         needsUpdate = true
@@ -563,9 +571,113 @@ private suspend fun updateCamera2RequestOptions(
         needsUpdate = true
     }
 
+    val newManualControls = newTransientSettings.manualControls
+    if (prevTransientSettings?.manualControls != newManualControls) {
+        applyManualControls(
+            optionsBuilder = optionsBuilder,
+            controls = newManualControls,
+            // Keep LLB's AE mode untouched: manual exposure and LLB are mutually exclusive in UI.
+            preserveAeMode = newTransientSettings.flashMode == FlashMode.LOW_LIGHT_BOOST,
+            lastExposureInfo = currentCameraState.value.exposureInfo
+        )
+        needsUpdate = true
+    }
+
     if (needsUpdate) {
         Camera2CameraControl.from(camera.cameraControl)
             .setCaptureRequestOptions(optionsBuilder.build())
+    }
+}
+
+/**
+ * Translates [ManualControls] into Camera2 capture request options on [optionsBuilder].
+ *
+ * Every key is either set (manual) or cleared (back to CameraX defaults / auto), so toggling a
+ * control off fully restores automatic behaviour without needing a session restart.
+ *
+ * Exposure: when ISO or shutter is pinned, `CONTROL_AE_MODE` is set to OFF and *both*
+ * `SENSOR_SENSITIVITY` and `SENSOR_EXPOSURE_TIME` are supplied (Camera2 requires both in
+ * manual mode). The missing one is taken from the last AE readout so the image brightness stays
+ * continuous when the user pins just one value, exactly like Pixel's Pro controls.
+ */
+@ExperimentalCamera2Interop
+internal fun applyManualControls(
+    optionsBuilder: CaptureRequestOptions.Builder,
+    controls: ManualControls,
+    preserveAeMode: Boolean,
+    lastExposureInfo: ExposureInfo
+) {
+    // --- Exposure (ISO + shutter) ---
+    val iso = controls.resolvedIso(lastExposureInfo.iso)
+    val exposureTime = controls.resolvedExposureTimeNanos(lastExposureInfo.exposureTimeNanos)
+    if (controls.isManualExposure && iso != null && exposureTime != null) {
+        optionsBuilder
+            .setCaptureRequestOption(
+                CaptureRequest.CONTROL_AE_MODE,
+                CameraMetadata.CONTROL_AE_MODE_OFF
+            )
+            .setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
+            .setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTime)
+            // AE lock and EV compensation are meaningless with AE off.
+            .clearCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK)
+            .clearCaptureRequestOption(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION)
+    } else {
+        if (!preserveAeMode) {
+            optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE)
+        }
+        optionsBuilder
+            .clearCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY)
+            .clearCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME)
+
+        // --- Exposure compensation (only meaningful while AE is on) ---
+        val ev = controls.exposureCompensationIndex
+        if (ev != null && ev != 0) {
+            optionsBuilder.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,
+                ev
+            )
+        } else {
+            optionsBuilder.clearCaptureRequestOption(
+                CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION
+            )
+        }
+
+        // --- AE lock ---
+        if (controls.aeLock) {
+            optionsBuilder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, true)
+        } else {
+            optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK)
+        }
+    }
+
+    // --- White balance ---
+    val wb = controls.whiteBalance
+    if (wb != null && wb != WhiteBalanceMode.AUTO) {
+        optionsBuilder
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, wb.toCamera2AwbMode())
+            .clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK)
+    } else {
+        optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE)
+        if (controls.awbLock) {
+            optionsBuilder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+        } else {
+            optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK)
+        }
+    }
+
+    // --- Focus ---
+    val focus = controls.focusDistanceDiopters
+    if (focus != null) {
+        optionsBuilder
+            .setCaptureRequestOption(
+                CaptureRequest.CONTROL_AF_MODE,
+                CameraMetadata.CONTROL_AF_MODE_OFF
+            )
+            .setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, focus)
+    } else {
+        optionsBuilder
+            .clearCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE)
+            .clearCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE)
     }
 }
 
@@ -614,7 +726,18 @@ internal fun createUseCaseGroup(
 
     // only create image use case in image or standard
     val imageCaptureUseCase = if (captureMode != CaptureMode.VIDEO_ONLY) {
-        createImageUseCase(cameraInfo, aspectRatio, imageFormat)
+        createImageUseCase(
+            cameraInfo = cameraInfo,
+            aspectRatio = aspectRatio,
+            imageFormat = imageFormat,
+            // ZSL only makes sense for pure photo capture with no effects/HDR/video pipeline:
+            // CameraX ignores it when VideoCapture or an effect is bound, and it conflicts with
+            // Ultra HDR output. Enabling it in IMAGE_ONLY gives Pixel-like instant shutter.
+            preferZeroShutterLag = captureMode == CaptureMode.IMAGE_ONLY &&
+                videoCaptureUseCase == null &&
+                effect == null &&
+                imageFormat == ImageOutputFormat.JPEG
+        )
     } else {
         null
     }
@@ -676,10 +799,12 @@ internal fun getHeightFromCropRect(cropRect: Rect?): Int {
     return abs(cropRect.bottom - cropRect.top)
 }
 
+@OptIn(ExperimentalZeroShutterLag::class)
 private fun createImageUseCase(
     cameraInfo: CameraInfo,
     aspectRatio: AspectRatio,
-    imageFormat: ImageOutputFormat
+    imageFormat: ImageOutputFormat,
+    preferZeroShutterLag: Boolean = false
 ): ImageCapture {
     val builder = ImageCapture.Builder()
     builder.setResolutionSelector(
@@ -687,6 +812,18 @@ private fun createImageUseCase(
     )
     if (imageFormat == ImageOutputFormat.JPEG_ULTRA_HDR) {
         builder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_JPEG_ULTRA_HDR)
+    }
+    val zslSupported = try {
+        cameraInfo.isZslSupported
+    } catch (e: Exception) {
+        false
+    }
+    if (preferZeroShutterLag && zslSupported) {
+        Log.d(TAG, "Enabling zero-shutter-lag image capture")
+        builder.setCaptureMode(ImageCapture.CAPTURE_MODE_ZERO_SHUTTER_LAG)
+    } else {
+        // Favour quality over latency for the "Pixel look" (full HAL post-processing).
+        builder.setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
     }
     return builder.build()
 }
@@ -1312,6 +1449,7 @@ private fun Preview.Builder.updateCameraStateWithCaptureResults(
     captureResults: MutableStateFlow<TotalCaptureResult?>? = null
 ): Preview.Builder {
     val isFirstFrameTimestampUpdated = atomic(false)
+    val lastExposureInfoPublishNanos = atomic(0L)
     val targetCameraLogicalId = Camera2CameraInfo.from(targetCameraInfo).cameraId
     Camera2Interop.Extender(this).setSessionCaptureCallback(
         object : CameraCaptureSession.CaptureCallback() {
@@ -1396,6 +1534,8 @@ private fun Preview.Builder.updateCameraStateWithCaptureResults(
                     }
                     // Publish stabilization state
                     publishStabilizationMode(result)
+                    // Publish live ISO / shutter / focus readout for the Pro overlay
+                    publishExposureInfo(result, lastExposureInfoPublishNanos)
                 } catch (e: Exception) {
                     // Never let an exception escape a Camera2 callback (it would kill the
                     // camera thread), but don't hide it either.
@@ -1405,6 +1545,48 @@ private fun Preview.Builder.updateCameraStateWithCaptureResults(
         }
     )
     return this
+}
+
+/** Minimum interval between two exposure-info publications (~8 Hz) while in auto exposure. */
+private const val EXPOSURE_INFO_MIN_INTERVAL_NANOS = 125_000_000L
+
+/**
+ * Publishes the live exposure readout (ISO / shutter / focus / locks) into [CameraState].
+ *
+ * In auto exposure the sensor values change on almost every frame, which would trigger a
+ * [CameraState] emission (and UI recomposition) at the preview frame rate. Numeric changes are
+ * therefore throttled to [EXPOSURE_INFO_MIN_INTERVAL_NANOS]; lock state changes are published
+ * immediately because they are user-driven and must be reflected without delay.
+ */
+context(CameraSessionContext)
+private fun publishExposureInfo(
+    result: TotalCaptureResult,
+    lastPublishNanos: AtomicLong
+) {
+    val exposureInfo = ExposureInfo(
+        iso = result.get(CaptureResult.SENSOR_SENSITIVITY),
+        exposureTimeNanos = result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
+        focusDistanceDiopters = result.get(CaptureResult.LENS_FOCUS_DISTANCE),
+        isAeLocked = result.get(CaptureResult.CONTROL_AE_LOCK) ?: false,
+        isAwbLocked = result.get(CaptureResult.CONTROL_AWB_LOCK) ?: false
+    )
+    val old = currentCameraState.value.exposureInfo
+    if (old == exposureInfo) return
+
+    val now = SystemClock.elapsedRealtimeNanos()
+    val lockChanged = old.isAeLocked != exposureInfo.isAeLocked ||
+        old.isAwbLocked != exposureInfo.isAwbLocked
+    if (!lockChanged && now - lastPublishNanos.value < EXPOSURE_INFO_MIN_INTERVAL_NANOS) {
+        return
+    }
+    lastPublishNanos.value = now
+    currentCameraState.update { state ->
+        if (state.exposureInfo != exposureInfo) {
+            state.copy(exposureInfo = exposureInfo)
+        } else {
+            state
+        }
+    }
 }
 
 context(CameraSessionContext)

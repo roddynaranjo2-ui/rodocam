@@ -28,6 +28,7 @@ import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
 import com.google.jetpackcamera.ui.uistate.capture.ImageWellUiState
+import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
 import com.google.jetpackcamera.ui.uistate.capture.ScreenFlashUiState
 import com.google.jetpackcamera.ui.uistate.capture.StabilizationUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState
@@ -70,6 +71,7 @@ sealed interface CaptureUiState {
      * @property zoomControlUiState The UI state for the zoom control buttons.
      * @property hdrUiState The UI state for the HDR setting.
      * @property focusMeteringUiState The UI state for focus and metering.
+     * @property manualControlsUiState The UI state for the Pro (manual) controls panel.
      */
     data class Ready(
         val videoRecordingState: VideoRecordingState = VideoRecordingState.Inactive(),
@@ -94,7 +96,8 @@ sealed interface CaptureUiState {
         val zoomControlUiState: ZoomControlUiState = ZoomControlUiState.Unavailable,
         val hdrUiState: HdrUiState = HdrUiState.Unavailable,
         val focusMeteringUiState: FocusMeteringUiState = FocusMeteringUiState.Unspecified,
-        val screenFlashUiState: ScreenFlashUiState = ScreenFlashUiState()
+        val screenFlashUiState: ScreenFlashUiState = ScreenFlashUiState(),
+        val manualControlsUiState: ManualControlsUiState = ManualControlsUiState.Unavailable
     ) : CaptureUiState
 
     companion object

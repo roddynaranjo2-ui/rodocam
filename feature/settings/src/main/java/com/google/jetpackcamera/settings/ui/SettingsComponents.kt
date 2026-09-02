@@ -580,27 +580,13 @@ fun TargetFpsSetting(
                         onClick = { setTargetFps(TARGET_FPS_AUTO) },
                         enabled = fpsUiState.fpsAutoState is SingleSelectableState.Selectable
                     )
-                    listOf(TARGET_FPS_15, TARGET_FPS_30, TARGET_FPS_60).forEach { fpsOption ->
+                    fpsUiState.fpsOptionStates.forEach { (fpsOption, optionState) ->
                         SingleChoiceSelector(
                             modifier = Modifier.testTag(getTargetFpsTestTag(fpsOption)),
                             text = "%d".format(fpsOption),
                             selected = fpsUiState.currentSelection == fpsOption,
                             onClick = { setTargetFps(fpsOption) },
-                            enabled = when (fpsOption) {
-                                TARGET_FPS_15 ->
-                                    fpsUiState.fpsFifteenState is
-                                        SingleSelectableState.Selectable
-
-                                TARGET_FPS_30 ->
-                                    fpsUiState.fpsThirtyState is
-                                        SingleSelectableState.Selectable
-
-                                TARGET_FPS_60 ->
-                                    fpsUiState.fpsSixtyState is
-                                        SingleSelectableState.Selectable
-
-                                else -> false
-                            }
+                            enabled = optionState is SingleSelectableState.Selectable
                         )
                     }
                 }

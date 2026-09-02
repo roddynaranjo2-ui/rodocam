@@ -23,6 +23,9 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
+import com.google.jetpackcamera.model.TARGET_FPS_15
+import com.google.jetpackcamera.model.TARGET_FPS_30
+import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.UNLIMITED_VIDEO_DURATION
 import com.google.jetpackcamera.model.VideoQuality
 import com.google.jetpackcamera.settings.DisabledRationale.DeviceUnsupportedRationale
@@ -174,7 +177,17 @@ sealed interface FpsUiState {
         val fpsThirtyState: SingleSelectableState,
         val fpsSixtyState: SingleSelectableState,
         // Contains text like "Selected FPS only supported by rear lens"
-        val additionalContext: String = ""
+        val additionalContext: String = "",
+        /**
+         * Selectable state for every offered frame rate (excluding AUTO), in display order.
+         * Includes cinematic 24 fps and slow-motion-ready 120 fps when the device reports them.
+         * Defaults to the legacy 15/30/60 triple so existing callers stay valid.
+         */
+        val fpsOptionStates: Map<Int, SingleSelectableState> = linkedMapOf(
+            TARGET_FPS_15 to fpsFifteenState,
+            TARGET_FPS_30 to fpsThirtyState,
+            TARGET_FPS_60 to fpsSixtyState
+        )
     ) : FpsUiState
 
     // FPS selection completely disabled. Cannot open dialog.

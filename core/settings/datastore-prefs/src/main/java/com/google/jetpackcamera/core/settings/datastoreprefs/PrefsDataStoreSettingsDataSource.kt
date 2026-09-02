@@ -74,6 +74,7 @@ class PrefsDataStoreSettingsDataSource(
             audioEnabled = prefs[PreferenceKeys.KEY_AUDIO_ENABLED] ?: true,
             concurrentCameraMode = prefs[PreferenceKeys.KEY_CONCURRENT_CAMERA_MODE]
                 .toEnumOrDefault(ConcurrentCameraMode.OFF),
+            isProModeEnabled = prefs[PreferenceKeys.KEY_PRO_MODE_ENABLED] ?: false,
             captureMode = defaultCaptureModeOverride
         )
     }
@@ -162,6 +163,12 @@ class PrefsDataStoreSettingsDataSource(
     override suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {
         dataStore.edit { prefs ->
             prefs[PreferenceKeys.KEY_CONCURRENT_CAMERA_MODE] = concurrentCameraMode.name
+        }
+    }
+
+    override suspend fun updateProModeEnabled(isProModeEnabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[PreferenceKeys.KEY_PRO_MODE_ENABLED] = isProModeEnabled
         }
     }
 

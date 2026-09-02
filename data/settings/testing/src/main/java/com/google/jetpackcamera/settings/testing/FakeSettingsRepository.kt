@@ -107,6 +107,11 @@ class FakeSettingsRepository(
             _defaultCameraAppSettings.value.copy(audioEnabled = isAudioEnabled)
     }
 
+    override suspend fun updateProModeEnabled(isProModeEnabled: Boolean) {
+        _defaultCameraAppSettings.value =
+            _defaultCameraAppSettings.value.copy(isProModeEnabled = isProModeEnabled)
+    }
+
     override suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {
         _defaultCameraAppSettings.value =
             _defaultCameraAppSettings.value.copy(concurrentCameraMode = concurrentCameraMode)

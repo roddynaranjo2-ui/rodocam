@@ -34,5 +34,7 @@ data class TrackedCaptureUiState(
     val debugHidingComponents: Boolean = false,
     val recentCapturedMedia: MediaDescriptor = MediaDescriptor.None,
     val lastBlinkTimeStamp: Long = 0,
-    val screenFlashUiState: ScreenFlashUiState = ScreenFlashUiState()
+    val screenFlashUiState: ScreenFlashUiState = ScreenFlashUiState(),
+    /** Whether the Pro (manual controls) panel is expanded over the viewfinder. */
+    val isProPanelOpen: Boolean = false
 )

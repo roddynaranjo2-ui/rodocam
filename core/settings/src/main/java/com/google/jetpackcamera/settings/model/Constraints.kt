@@ -23,6 +23,8 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.Illuminant
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
+import com.google.jetpackcamera.model.LensInfo
+import com.google.jetpackcamera.model.ManualCapabilities
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TARGET_FPS_15
 import com.google.jetpackcamera.model.TARGET_FPS_30
@@ -105,6 +107,9 @@ fun CameraSystemConstraints.getSupportedMimeTypes(): Map<LensFacing, Set<String>
  * @property supportedZoomRange Optional [Range] of floats for zoom ratios. Null if zoom is not supported.
  * @property unsupportedStabilizationFpsMap Map of [StabilizationMode] to a set of frame rates (FPS) that are unsupported with that mode.
  * @property supportedTestPatterns Set of [TestPattern] values supported by this lens, used for debugging.
+ * @property manualCapabilities Pro/manual control capabilities (ISO, shutter, EV, focus, WB, locks, RAW, ZSL).
+ * @property physicalLenses Physical lenses behind this logical camera with their relative zoom ratios,
+ *   sorted ascending (e.g. 0.6x ultra-wide, 1x wide, 3x telephoto). Empty if unknown.
  */
 data class CameraConstraints(
     val supportedStabilizationModes: Set<StabilizationMode>,
@@ -118,7 +123,9 @@ data class CameraConstraints(
     val supportedFlashModes: Set<FlashMode>,
     val supportedZoomRange: Range<Float>?,
     val unsupportedStabilizationFpsMap: Map<StabilizationMode, Set<Int>>,
-    val supportedTestPatterns: Set<TestPattern>
+    val supportedTestPatterns: Set<TestPattern>,
+    val manualCapabilities: ManualCapabilities = ManualCapabilities.NONE,
+    val physicalLenses: List<LensInfo> = emptyList()
 ) {
     val StabilizationMode.unsupportedFpsSet
         get() = unsupportedStabilizationFpsMap[this] ?: emptySet()

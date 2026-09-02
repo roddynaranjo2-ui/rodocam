@@ -33,6 +33,7 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
@@ -171,6 +172,19 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
     override fun setTestPattern(newTestPattern: TestPattern) {
         currentSettings.update { old ->
             old.copy(debugSettings = old.debugSettings.copy(testPattern = newTestPattern))
+        }
+    }
+
+    override fun setManualControls(manualControls: ManualControls) {
+        currentSettings.update { old -> old.copy(manualControls = manualControls) }
+    }
+
+    override suspend fun setProModeEnabled(enabled: Boolean) {
+        currentSettings.update { old ->
+            old.copy(
+                isProModeEnabled = enabled,
+                manualControls = if (enabled) old.manualControls else ManualControls.AUTO
+            )
         }
     }
 

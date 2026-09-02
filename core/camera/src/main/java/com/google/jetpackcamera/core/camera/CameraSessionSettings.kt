@@ -25,6 +25,7 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
 import com.google.jetpackcamera.model.VideoQuality
@@ -77,7 +78,8 @@ internal data class TransientSessionSettings(
     val flashMode: FlashMode,
     val primaryLensFacing: LensFacing,
     val zoomRatios: Map<LensFacing, Float>,
-    val testPattern: TestPattern
+    val testPattern: TestPattern,
+    val manualControls: ManualControls = ManualControls.AUTO
 )
 
 data class InitialRecordingSettings(

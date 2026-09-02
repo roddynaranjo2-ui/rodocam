@@ -136,4 +136,25 @@
     <string name="quick_settings_preview_sd_description">Standard Definition</string>
     <string name="quick_settings_preview_hd_description">High Definition</string>
     <string name="quick_settings_preview_fhd_description">Full High Definition</string>
+
+    <!-- Pro (manual) controls -->
+    <string name="pro_mode_label">Pro</string>
+    <string name="pro_iso_label">ISO</string>
+    <string name="pro_shutter_label">Shutter</string>
+    <string name="pro_ev_label">EV</string>
+    <string name="pro_wb_label">WB</string>
+    <string name="pro_focus_label">Focus</string>
+    <string name="pro_ae_lock_label">AE</string>
+    <string name="pro_reset_label">Reset</string>
+    <string name="pro_value_auto">Auto</string>
+    <string name="pro_value_locked">Locked</string>
+    <string name="pro_value_unlocked">Unlocked</string>
+    <string name="pro_wb_auto">Auto</string>
+    <string name="pro_wb_incandescent">Incandescent</string>
+    <string name="pro_wb_fluorescent">Fluorescent</string>
+    <string name="pro_wb_warm_fluorescent">Warm fluorescent</string>
+    <string name="pro_wb_daylight">Daylight</string>
+    <string name="pro_wb_cloudy">Cloudy</string>
+    <string name="pro_wb_twilight">Twilight</string>
+    <string name="pro_wb_shade">Shade</string>
 </resources>
