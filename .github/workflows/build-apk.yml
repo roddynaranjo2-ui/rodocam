@@ -1,14 +1,57 @@
+# =============================================================================
+#  RodoCam — CI de compilación Android
+#  - Se dispara en push (main / genspark_ai_developer), PR a main, tag v* y manual.
+#  - Job 1: unit tests JVM (sin emulador) de los módulos con tests.
+#  - Job 2: APK debug (flavor stable) + APK release firmado si hay secretos
+#           ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
+#           ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD (Settings → Secrets).
+#  - Job 3: estado único para branch protection.
+# =============================================================================
 name: Build Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      build_release:
+        description: 'Compilar también la variante release (requiere secretos de firma)'
+        type: boolean
+        default: false
+  push:
+    branches: [main, genspark_ai_developer]
+    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 permissions:
   contents: read
 
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Los runners ubuntu-latest tienen ~7 GB: acotamos la JVM de Gradle y Kotlin.
+  GRADLE_OPTS: >-
+    -Dorg.gradle.daemon=false
+    -Dorg.gradle.workers.max=2
+    -Dorg.gradle.jvmargs=-Xmx4g\ -XX:MaxMetaspaceSize=1g\ -Dfile.encoding=UTF-8
+  KOTLIN_DAEMON_JVM_OPTIONS: -Xmx2g
+  CI: 'true'
+
 jobs:
-  build:
+  # ---------------------------------------------------------------------------
+  # 1) Unit tests (JVM) — no requieren emulador
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests (JVM)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Code
@@ -20,21 +63,142 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools cmake;3.22.1'
+
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: >
+          ./gradlew --stacktrace --console=plain --continue
+          :core:model:testStableDebugUnitTest
+          :core:camera:testStableDebugUnitTest
+          :core:camera:postprocess:heic:testDebugUnitTest
+          :feature:preview:testStableDebugUnitTest
+          :ui:components:capture:testStableDebugUnitTest
+          :ui:uistateadapter:capture:testStableDebugUnitTest
+          :ui:controller:impl:testStableDebugUnitTest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # 2) Build APK debug (siempre) + release firmado (tag v* / manual + secretos)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools cmake;3.22.1'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew :app:assembleStableDebug --stacktrace --console=plain
+
+      - name: Decode release keystore
+        id: keystore
+        if: >-
+          (startsWith(github.ref, 'refs/tags/v') || inputs.build_release == true)
+          && env.HAS_KEYSTORE == 'true'
+        env:
+          HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "path=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release APK (firmado)
+        if: steps.keystore.outcome == 'success'
+        env:
+          RODOCAM_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
+          RODOCAM_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RODOCAM_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          RODOCAM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RODOCAM_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew :app:assembleStableRelease --stacktrace --console=plain
 
       - name: Verify generated APK
-        run: find app/build/outputs -type f -name '*.apk' -print
+        run: |
+          find app/build/outputs -type f \( -name '*.apk' -o -name 'mapping.txt' \) -print
+          test -n "$(find app/build/outputs/apk -name '*.apk' -print -quit)"
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: JetpackCamera-APK
+          name: RodoCam-stable-debug-APK
           path: 'app/build/outputs/apk/stable/debug/*.apk'
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Release APK + mapping
+        if: steps.keystore.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RodoCam-stable-release-APK
+          path: |
+            app/build/outputs/apk/stable/release/*.apk
+            app/build/outputs/mapping/stableRelease/mapping.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: '**/build/reports/**'
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 3) Estado único para branch protection
+  # ---------------------------------------------------------------------------
+  ci-status:
+    name: CI status
+    runs-on: ubuntu-latest
+    needs: [unit-tests, build]
+    if: always()
+    steps:
+      - name: Evaluate
+        run: |
+          echo "unit-tests: ${{ needs.unit-tests.result }}"
+          echo "build:      ${{ needs.build.result }}"
+          if [ "${{ needs.unit-tests.result }}" != "success" ] || [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::Un job crítico falló"; exit 1
+          fi
