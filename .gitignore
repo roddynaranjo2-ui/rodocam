@@ -1,20 +1,44 @@
-*.iml
-.gradle
-/local.properties
-**/.idea/**
-!**/.idea/codeStyleSettings.xml
-!**/.idea/copyright
-!**/.idea/codeStyles
-!.idea/codeStyles/Project.xml
-!.idea/codeStyles/codeStyleConfig.xml
-!.idea/copyright/AOSP.xml
-!.idea/copyright/profiles_settings.xml
-!.idea/inspectionProfiles/Project_Default.xml
-.DS_Store
-**/build
-/captures
-.externalNativeBuild
-.cxx
+# Gradle and Android build outputs
+.gradle/
+**/.gradle/
+build/
+**/build/
+.externalNativeBuild/
+**/.externalNativeBuild/
+.cxx/
+**/.cxx/
+.kotlin/
+**/.kotlin/
+captures/
+**/captures/
+
+# Android and local machine configuration
 local.properties
-/.kotlin
-/GEMINI.md
+**/local.properties
+.idea/
+**/.idea/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+
+# Generated reports and logs
+*.log
+reports/
+**/reports/
+
+# Temporary/editor files
+*.swp
+*.swo
+*~
