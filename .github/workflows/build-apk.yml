@@ -3,6 +3,9 @@ name: Build Android APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,8 +29,12 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Verify generated APK
+        run: find app/build/outputs -type f -name '*.apk' -print
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JetpackCamera-APK
-          path: '**/build/outputs/apk/debug/*.apk'
+          path: 'app/build/outputs/apk/stable/debug/*.apk'
+          if-no-files-found: error
