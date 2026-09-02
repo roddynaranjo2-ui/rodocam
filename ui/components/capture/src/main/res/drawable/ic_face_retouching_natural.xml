@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2026 The Android Open Source Project
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~      http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960"
+    android:tint="?attr/colorControlNormal">
+  <!-- Face outline (ring) -->
+  <path
+      android:fillColor="@android:color/white"
+      android:fillType="evenOdd"
+      android:pathData="M480,880Q397,880 324.5,848.5Q252,817 197.5,762.5Q143,708 111.5,635.5Q80,563 80,480Q80,397 111.5,324.5Q143,252 197.5,197.5Q252,143 324.5,111.5Q397,80 480,80Q563,80 635.5,111.5Q708,143 762.5,197.5Q817,252 848.5,324.5Q880,397 880,480Q880,563 848.5,635.5Q817,708 762.5,762.5Q708,817 635.5,848.5Q563,880 480,880ZM480,800Q614,800 707,707Q800,614 800,480Q800,346 707,253Q614,160 480,160Q346,160 253,253Q160,346 160,480Q160,614 253,707Q346,800 480,800Z"/>
+  <!-- Eyes -->
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M370,460Q345,460 327.5,442.5Q310,425 310,400Q310,375 327.5,357.5Q345,340 370,340Q395,340 412.5,357.5Q430,375 430,400Q430,425 412.5,442.5Q395,460 370,460ZM590,460Q565,460 547.5,442.5Q530,425 530,400Q530,375 547.5,357.5Q565,340 590,340Q615,340 632.5,357.5Q650,375 650,400Q650,425 632.5,442.5Q615,460 590,460Z"/>
+  <!-- Smile -->
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M480,680Q412,680 359,642Q306,604 290,545L348,529Q360,571 397.5,595.5Q435,620 480,620Q525,620 562.5,595.5Q600,571 612,529L670,545Q654,604 601,642Q548,680 480,680Z"/>
+  <!-- Retouch sparkle -->
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M700,300L680,255L635,235L680,215L700,170L720,215L765,235L720,255Z"/>
+</vector>

@@ -17,6 +17,7 @@ package com.google.jetpackcamera.settings
 
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -101,5 +102,9 @@ class LocalSettingsRepository @Inject constructor(
 
     override suspend fun updateProModeEnabled(isProModeEnabled: Boolean) {
         settingsDataSource.updateProModeEnabled(isProModeEnabled)
+    }
+
+    override suspend fun updateExtensionMode(extensionMode: CameraExtensionMode) {
+        settingsDataSource.updateExtensionMode(extensionMode)
     }
 }

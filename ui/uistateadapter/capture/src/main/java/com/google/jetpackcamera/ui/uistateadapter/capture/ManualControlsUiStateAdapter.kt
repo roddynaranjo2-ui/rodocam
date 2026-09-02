@@ -30,6 +30,8 @@ import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
  * Returns [ManualControlsUiState.Unavailable] when:
  * - the active lens exposes no manual control at all (legacy HAL, external camera), or
  * - dual concurrent camera is active (CameraX does not route Camera2 interop to both cameras), or
+ * - a CameraX extension (Night/Portrait/HDR/Face Retouch) is active: the vendor pipeline owns
+ *   exposure and processing, so Camera2 interop overrides would be ignored or break capture, or
  * - the app was launched by an external intent that does not expect a Pro UI.
  *
  * @param isPanelOpen Whether the user has the Pro panel expanded (tracked UI state).
@@ -45,6 +47,9 @@ fun ManualControlsUiState.Companion.from(
         return ManualControlsUiState.Unavailable
     }
     if (cameraAppSettings.concurrentCameraMode == ConcurrentCameraMode.DUAL) {
+        return ManualControlsUiState.Unavailable
+    }
+    if (cameraAppSettings.extensionMode.isEnabled) {
         return ManualControlsUiState.Unavailable
     }
     val capabilities = systemConstraints.forCurrentLens(cameraAppSettings)?.manualCapabilities

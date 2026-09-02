@@ -46,6 +46,7 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,20 +59,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.WhiteBalanceMode
+import com.google.jetpackcamera.model.approximateKelvin
 import com.google.jetpackcamera.model.formatShutterSpeed
 import com.google.jetpackcamera.ui.controller.ManualControlsController
 import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
+import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 
 /** Which manual control is currently expanded in the Pro panel. */
-enum class ProControl { ISO, SHUTTER, EV, WHITE_BALANCE, FOCUS }
+enum class ProControl { ISO, SHUTTER, EV, SHADOWS, WHITE_BALANCE, FOCUS }
 
 /**
  * Pixel-style "Pro" toggle shown next to the zoom row: a small pill that enables/disables the
@@ -85,9 +93,11 @@ fun ProModeToggle(
     modifier: Modifier = Modifier
 ) {
     val available = manualControlsUiState as? ManualControlsUiState.Available ?: return
+    val description = stringResource(R.string.pro_mode_toggle_description)
     ToggleButton(
         modifier = modifier
             .height(ButtonDefaults.ExtraSmallContainerHeight)
+            .semantics { contentDescription = description }
             .testTag(PRO_MODE_TOGGLE_TAG),
         checked = available.isProModeEnabled,
         onCheckedChange = { onToggle() },
@@ -147,7 +157,8 @@ fun ManualControlsPanel(
                     ProControl.ISO -> IsoSlider(available, controller)
                     ProControl.SHUTTER -> ShutterSlider(available, controller)
                     ProControl.EV -> ExposureCompensationSlider(available, controller)
-                    ProControl.WHITE_BALANCE -> WhiteBalanceChips(available, controller)
+                    ProControl.SHADOWS -> ShadowsSlider(available, controller)
+                    ProControl.WHITE_BALANCE -> WhiteBalancePanel(available, controller)
                     ProControl.FOCUS -> FocusSlider(available, controller)
                     null -> Unit
                 }
@@ -190,10 +201,21 @@ fun ManualControlsPanel(
                     testTag = PRO_CHIP_EV_TAG
                 ) { expanded = if (expanded == ProControl.EV) null else ProControl.EV }
             }
+            if (caps.supportsShadowsBoost) {
+                ProChip(
+                    label = stringResource(R.string.pro_shadows_label),
+                    value = formatShadows(controls.shadowsBoost),
+                    isManual = controls.isShadowsAdjusted,
+                    selected = expanded == ProControl.SHADOWS,
+                    enabled = true,
+                    testTag = PRO_CHIP_SHADOWS_TAG
+                ) { expanded = if (expanded == ProControl.SHADOWS) null else ProControl.SHADOWS }
+            }
             if (caps.supportsManualWhiteBalance) {
                 ProChip(
                     label = stringResource(R.string.pro_wb_label),
-                    value = stringResource(controls.whiteBalance.labelRes()),
+                    value = controls.whiteBalanceKelvin?.let(::formatKelvin)
+                        ?: stringResource(controls.whiteBalance.labelRes()),
                     isManual = controls.isManualWhiteBalance,
                     selected = expanded == ProControl.WHITE_BALANCE,
                     enabled = true,
@@ -264,8 +286,13 @@ private fun ProChip(
     testTag: String,
     onClick: () -> Unit
 ) {
+    val stateText = stringResource(
+        if (isManual) R.string.pro_state_manual else R.string.pro_value_auto
+    )
     FilterChip(
-        modifier = Modifier.testTag(testTag),
+        modifier = Modifier
+            .testTag(testTag)
+            .semantics { stateDescription = stateText },
         selected = selected,
         enabled = enabled,
         onClick = onClick,
@@ -322,6 +349,54 @@ private fun rememberDebouncedSetter(
     return { value -> pending = value }
 }
 
+/**
+ * Slider position that follows an external (camera-state derived) value **only while the user is
+ * not dragging**. Without this the snapped value echoed back by the controller ~40 ms after each
+ * drag event would yank the thumb away from the finger.
+ */
+@Stable
+private class SliderSync(initialPosition: Float) {
+    var position by mutableFloatStateOf(initialPosition)
+    var isDragging by mutableStateOf(false)
+}
+
+@Composable
+private fun rememberSliderSync(externalPosition: Float): SliderSync {
+    val sync = remember { SliderSync(externalPosition) }
+    LaunchedEffect(externalPosition) {
+        if (!sync.isDragging) sync.position = externalPosition
+    }
+    return sync
+}
+
+/**
+ * Shared [Slider] wiring: test tag, TalkBack description and drag tracking for [SliderSync].
+ */
+@Composable
+private fun ProSlider(
+    sync: SliderSync,
+    testTag: String,
+    contentDescription: String,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    steps: Int = 0
+) {
+    Slider(
+        modifier = Modifier
+            .testTag(testTag)
+            .semantics { this.contentDescription = contentDescription },
+        value = sync.position,
+        valueRange = valueRange,
+        steps = steps,
+        onValueChange = {
+            sync.isDragging = true
+            sync.position = it
+            onValueChange(it)
+        },
+        onValueChangeFinished = { sync.isDragging = false }
+    )
+}
+
 @Composable
 private fun SliderRow(
     title: String,
@@ -373,23 +448,25 @@ private fun IsoSlider(
     val minLog = ln(range.first.toFloat())
     val maxLog = ln(range.last.toFloat())
     val current = state.displayIso ?: range.first
-    var sliderPos by remember(current, state.controls.iso == null) {
-        mutableFloatStateOf(((ln(current.toFloat()) - minLog) / (maxLog - minLog)).coerceIn(0f, 1f))
-    }
+    val sync = rememberSliderSync(
+        ((ln(current.toFloat()) - minLog) / (maxLog - minLog)).coerceIn(0f, 1f)
+    )
     val apply = rememberDebouncedSetter { pos ->
-        val iso = kotlin.math.exp(minLog + pos * (maxLog - minLog)).roundToInt()
+        val iso = exp(minLog + pos * (maxLog - minLog)).roundToInt()
         controller?.setIso(snapIso(iso).coerceIn(range.first, range.last))
     }
+    val title = stringResource(R.string.pro_iso_label)
     SliderRow(
-        title = stringResource(R.string.pro_iso_label),
-        valueText = (state.controls.iso ?: state.displayIso)?.toString() ?: "—",
+        title = title,
+        valueText = state.displayIso?.toString() ?: "—",
         isManual = state.controls.iso != null,
         onAuto = { controller?.setIso(null) }
     ) {
-        Slider(
-            modifier = Modifier.testTag(PRO_SLIDER_ISO_TAG),
-            value = sliderPos,
-            onValueChange = { sliderPos = it; apply(it) }
+        ProSlider(
+            sync = sync,
+            testTag = PRO_SLIDER_ISO_TAG,
+            contentDescription = title,
+            onValueChange = apply
         )
     }
 }
@@ -406,26 +483,25 @@ private fun ShutterSlider(
     val minLog = ln(lo.toDouble())
     val maxLog = ln(hi.toDouble())
     val current = (state.displayExposureTimeNanos ?: lo).coerceIn(lo, hi)
-    var sliderPos by remember(current, state.controls.exposureTimeNanos == null) {
-        mutableFloatStateOf(
-            ((ln(current.toDouble()) - minLog) / (maxLog - minLog)).toFloat().coerceIn(0f, 1f)
-        )
-    }
+    val sync = rememberSliderSync(
+        ((ln(current.toDouble()) - minLog) / (maxLog - minLog)).toFloat().coerceIn(0f, 1f)
+    )
     val apply = rememberDebouncedSetter { pos ->
-        val nanos = kotlin.math.exp(minLog + pos * (maxLog - minLog)).toLong()
+        val nanos = exp(minLog + pos * (maxLog - minLog)).toLong()
         controller?.setExposureTimeNanos(snapShutter(nanos).coerceIn(lo, hi))
     }
+    val title = stringResource(R.string.pro_shutter_label)
     SliderRow(
-        title = stringResource(R.string.pro_shutter_label),
-        valueText = (state.controls.exposureTimeNanos ?: state.displayExposureTimeNanos)
-            ?.let(::formatShutterSpeed) ?: "—",
+        title = title,
+        valueText = state.displayExposureTimeNanos?.let(::formatShutterSpeed) ?: "—",
         isManual = state.controls.exposureTimeNanos != null,
         onAuto = { controller?.setExposureTimeNanos(null) }
     ) {
-        Slider(
-            modifier = Modifier.testTag(PRO_SLIDER_SHUTTER_TAG),
-            value = sliderPos,
-            onValueChange = { sliderPos = it; apply(it) }
+        ProSlider(
+            sync = sync,
+            testTag = PRO_SLIDER_SHUTTER_TAG,
+            contentDescription = title,
+            onValueChange = apply
         )
     }
 }
@@ -437,22 +513,26 @@ private fun ExposureCompensationSlider(
 ) {
     val range = state.capabilities.exposureCompensationRange ?: return
     val current = state.controls.exposureCompensationIndex ?: 0
-    var sliderPos by remember(current) { mutableFloatStateOf(current.toFloat()) }
+    val sync = rememberSliderSync(current.toFloat())
     val apply = rememberDebouncedSetter { pos ->
         controller?.setExposureCompensationIndex(pos.roundToInt())
     }
+    val title = stringResource(R.string.pro_ev_label)
     SliderRow(
-        title = stringResource(R.string.pro_ev_label),
-        valueText = formatEv(sliderPos.roundToInt() * state.capabilities.exposureCompensationStep),
+        title = title,
+        valueText = formatEv(
+            sync.position.roundToInt() * state.capabilities.exposureCompensationStep
+        ),
         isManual = current != 0,
         onAuto = { controller?.setExposureCompensationIndex(null) }
     ) {
-        Slider(
-            modifier = Modifier.testTag(PRO_SLIDER_EV_TAG),
-            value = sliderPos,
+        ProSlider(
+            sync = sync,
+            testTag = PRO_SLIDER_EV_TAG,
+            contentDescription = title,
+            onValueChange = apply,
             valueRange = range.first.toFloat()..range.last.toFloat(),
-            steps = (range.last - range.first - 1).coerceAtLeast(0),
-            onValueChange = { sliderPos = it; apply(it) }
+            steps = (range.last - range.first - 1).coerceAtLeast(0)
         )
     }
 }
@@ -469,54 +549,153 @@ private fun FocusSlider(
     val current = state.controls.focusDistanceDiopters
         ?: state.exposureInfo.focusDistanceDiopters
         ?: 0f
-    var sliderPos by remember(current, state.controls.focusDistanceDiopters == null) {
-        mutableFloatStateOf(kotlin.math.sqrt((current / maxDiopters).coerceIn(0f, 1f)))
-    }
+    val sync = rememberSliderSync(sqrt((current / maxDiopters).coerceIn(0f, 1f)))
     val apply = rememberDebouncedSetter { pos ->
         controller?.setFocusDistance((pos.pow(2) * maxDiopters).coerceIn(0f, maxDiopters))
     }
+    val title = stringResource(R.string.pro_focus_label)
     SliderRow(
-        title = stringResource(R.string.pro_focus_label),
-        valueText = formatFocus(sliderPos.pow(2) * maxDiopters, maxDiopters),
+        title = title,
+        valueText = formatFocus(sync.position.pow(2) * maxDiopters, maxDiopters),
         isManual = state.controls.focusDistanceDiopters != null,
         onAuto = { controller?.setFocusDistance(null) }
     ) {
-        Slider(
-            modifier = Modifier.testTag(PRO_SLIDER_FOCUS_TAG),
-            value = sliderPos,
-            onValueChange = { sliderPos = it; apply(it) }
+        ProSlider(
+            sync = sync,
+            testTag = PRO_SLIDER_FOCUS_TAG,
+            contentDescription = title,
+            onValueChange = apply
         )
     }
 }
 
+/**
+ * Dual Exposure "shadows" slider: -1 (deep shadows) … 0 (default) … +1 (lifted shadows).
+ * Snaps to 0 near the centre so the neutral position is easy to hit.
+ */
 @Composable
-private fun WhiteBalanceChips(
+private fun ShadowsSlider(
     state: ManualControlsUiState.Available,
     controller: ManualControlsController?
 ) {
-    val modes = remember(state.capabilities.supportedWhiteBalanceModes) {
-        WhiteBalanceMode.entries.filter { it in state.capabilities.supportedWhiteBalanceModes }
+    val current = state.controls.shadowsBoost ?: 0f
+    val sync = rememberSliderSync(current)
+    val apply = rememberDebouncedSetter { pos ->
+        controller?.setShadowsBoost(snapShadows(pos))
     }
-    val selected = state.controls.whiteBalance ?: WhiteBalanceMode.AUTO
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    val title = stringResource(R.string.pro_shadows_label)
+    SliderRow(
+        title = title,
+        valueText = formatShadows(snapShadows(sync.position)),
+        isManual = state.controls.isShadowsAdjusted,
+        onAuto = { controller?.setShadowsBoost(null) }
     ) {
-        modes.forEach { mode ->
-            FilterChip(
-                modifier = Modifier.testTag("$PRO_WB_CHIP_PREFIX${mode.name}"),
-                selected = mode == selected,
-                onClick = { controller?.setWhiteBalance(mode) },
-                label = { Text(stringResource(mode.labelRes())) },
-                colors = FilterChipDefaults.filterChipColors(
-                    labelColor = Color.White,
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
+        ProSlider(
+            sync = sync,
+            testTag = PRO_SLIDER_SHADOWS_TAG,
+            contentDescription = title,
+            onValueChange = apply,
+            valueRange = ManualControls.SHADOWS_RANGE
+        )
+    }
+}
+
+/**
+ * White balance panel: preset chips (Auto, Daylight, …) plus a "K" chip that reveals a kelvin
+ * slider when the lens supports manual colour correction, like Pixel's Pro white balance.
+ */
+@Composable
+private fun WhiteBalancePanel(
+    state: ManualControlsUiState.Available,
+    controller: ManualControlsController?
+) {
+    val caps = state.capabilities
+    val modes = remember(caps.supportedWhiteBalanceModes) {
+        WhiteBalanceMode.entries.filter { it in caps.supportedWhiteBalanceModes }
+    }
+    val controls = state.controls
+    val isKelvin = controls.isKelvinWhiteBalance
+    val selectedPreset = controls.whiteBalance ?: WhiteBalanceMode.AUTO
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            modes.forEach { mode ->
+                WhiteBalanceChip(
+                    label = stringResource(mode.labelRes()),
+                    selected = !isKelvin && mode == selectedPreset,
+                    testTag = "$PRO_WB_CHIP_PREFIX${mode.name}"
+                ) { controller?.setWhiteBalance(mode) }
+            }
+            if (caps.supportsWhiteBalanceKelvin) {
+                WhiteBalanceChip(
+                    label = stringResource(R.string.pro_wb_kelvin_label),
+                    selected = isKelvin,
+                    testTag = PRO_CHIP_WB_KELVIN_TAG
+                ) {
+                    if (!isKelvin) {
+                        controller?.setWhiteBalanceKelvin(selectedPreset.approximateKelvin())
+                    }
+                }
+            }
         }
+        if (isKelvin && caps.supportsWhiteBalanceKelvin) {
+            Spacer(Modifier.height(4.dp))
+            KelvinSlider(state, controller)
+        }
+    }
+}
+
+@Composable
+private fun WhiteBalanceChip(
+    label: String,
+    selected: Boolean,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        modifier = Modifier.testTag(testTag),
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        colors = FilterChipDefaults.filterChipColors(
+            labelColor = Color.White,
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+        )
+    )
+}
+
+@Composable
+private fun KelvinSlider(
+    state: ManualControlsUiState.Available,
+    controller: ManualControlsController?
+) {
+    val range = ManualControls.WHITE_BALANCE_KELVIN_RANGE
+    val step = ManualControls.WHITE_BALANCE_KELVIN_STEP
+    val current = state.controls.whiteBalanceKelvin ?: ManualControls.WHITE_BALANCE_KELVIN_NEUTRAL
+    val sync = rememberSliderSync(current.toFloat())
+    val apply = rememberDebouncedSetter { pos ->
+        controller?.setWhiteBalanceKelvin(snapKelvin(pos, step).coerceIn(range))
+    }
+    val title = stringResource(R.string.pro_wb_label)
+    SliderRow(
+        title = title,
+        valueText = formatKelvin(snapKelvin(sync.position, step)),
+        isManual = true,
+        onAuto = { controller?.setWhiteBalance(null) }
+    ) {
+        ProSlider(
+            sync = sync,
+            testTag = PRO_SLIDER_WB_KELVIN_TAG,
+            contentDescription = title,
+            onValueChange = apply,
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = ((range.last - range.first) / step - 1).coerceAtLeast(0)
+        )
     }
 }
 
@@ -533,49 +712,4 @@ private fun WhiteBalanceMode?.labelRes(): Int = when (this) {
     WhiteBalanceMode.CLOUDY_DAYLIGHT -> R.string.pro_wb_cloudy
     WhiteBalanceMode.TWILIGHT -> R.string.pro_wb_twilight
     WhiteBalanceMode.SHADE -> R.string.pro_wb_shade
-}
-
-internal fun formatEv(ev: Float): String {
-    val rounded = (ev * 10).roundToInt() / 10f
-    return when {
-        rounded == 0f -> "0"
-        rounded > 0f -> "+$rounded"
-        else -> "$rounded"
-    }
-}
-
-/** Formats a focus distance in diopters as metres, with ∞ at 0 and "Macro" at the near limit. */
-internal fun formatFocus(diopters: Float, maxDiopters: Float): String = when {
-    diopters <= 0.05f -> "∞"
-    diopters >= maxDiopters * 0.98f -> "Macro"
-    else -> {
-        val metres = 1f / diopters
-        if (metres >= 1f) {
-            "${(metres * 10).roundToInt() / 10f} m"
-        } else {
-            "${(metres * 100).roundToInt()} cm"
-        }
-    }
-}
-
-private val ISO_STOPS = intArrayOf(
-    25, 32, 40, 50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600,
-    2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800
-)
-
-/** Snaps to standard 1/3-stop ISO values so the readout matches what photographers expect. */
-internal fun snapIso(iso: Int): Int = ISO_STOPS.minByOrNull { kotlin.math.abs(it - iso) } ?: iso
-
-private val SHUTTER_DENOMINATORS = intArrayOf(
-    8000, 6400, 5000, 4000, 3200, 2500, 2000, 1600, 1250, 1000, 800, 640, 500, 400, 320, 250, 200,
-    160, 125, 100, 80, 60, 50, 40, 30, 25, 20, 15, 13, 10, 8, 6, 5, 4, 3, 2
-)
-
-/** Snaps to standard shutter speeds (1/8000 … 1/2, then whole/half seconds). */
-internal fun snapShutter(nanos: Long): Long {
-    if (nanos >= 1_000_000_000L) {
-        return ((nanos + 250_000_000L) / 500_000_000L) * 500_000_000L
-    }
-    val candidates = SHUTTER_DENOMINATORS.map { 1_000_000_000L / it } + 700_000_000L
-    return candidates.minByOrNull { kotlin.math.abs(it - nanos) } ?: nanos
 }

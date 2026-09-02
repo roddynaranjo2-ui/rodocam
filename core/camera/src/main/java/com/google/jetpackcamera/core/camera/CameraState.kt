@@ -80,11 +80,14 @@ sealed interface FocusState {
      * @param x The x-coordinate of the focus point.
      * @param y The y-coordinate of the focus point.
      * @param status The status of the focus operation.
+     * @param isLocked True when focus/exposure are locked at this point (long-press) and will
+     *   not auto-cancel until the user taps again.
      */
     data class Specified(
         val x: Float,
         val y: Float,
-        val status: Status
+        val status: Status,
+        val isLocked: Boolean = false
     ) : FocusState
 
     /**

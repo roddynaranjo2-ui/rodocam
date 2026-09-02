@@ -20,6 +20,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.SurfaceRequest
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
@@ -138,6 +139,14 @@ interface CameraSystem {
     suspend fun setProModeEnabled(enabled: Boolean)
 
     /**
+     * Binds a vendor extension (Night, Bokeh, HDR, Face retouch) to the camera session.
+     *
+     * Unsupported modes for the active lens resolve to [CameraExtensionMode.NONE]. Enabling an
+     * extension resets manual controls and forces JPEG/SDR output.
+     */
+    suspend fun setExtensionMode(extensionMode: CameraExtensionMode)
+
+    /**
      * Returns a [StateFlow] of the current [CameraState].
      */
     fun getCurrentCameraState(): StateFlow<CameraState>
@@ -209,6 +218,15 @@ interface CameraSystem {
      * @param y The y-coordinate of the focus point, normalized from 0.0 to 1.0.
      */
     suspend fun tapToFocus(x: Float, y: Float)
+
+    /**
+     * Locks focus, exposure and white balance at the given coordinates on the preview surface
+     * (Pixel-style long-press "AE/AF lock"). The lock persists until the next [tapToFocus].
+     *
+     * @param x The x-coordinate of the focus point, normalized from 0.0 to 1.0.
+     * @param y The y-coordinate of the focus point, normalized from 0.0 to 1.0.
+     */
+    suspend fun lockFocusAndExposure(x: Float, y: Float)
 
     /**
      * Sets the camera effect.
@@ -338,6 +356,7 @@ interface CameraSystem {
                 CameraAppSettings::concurrentCameraMode,
                 cameraSystem::setConcurrentCameraMode
             )
+            applyDiff(new, CameraAppSettings::extensionMode, cameraSystem::setExtensionMode)
         }
     }
 }

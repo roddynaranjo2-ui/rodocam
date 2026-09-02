@@ -16,6 +16,7 @@
 package com.google.jetpackcamera.ui.controller.testing
 
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
@@ -33,6 +34,7 @@ import com.google.jetpackcamera.ui.controller.quicksettings.QuickSettingsControl
  * @param setDynamicRangeAction The action to perform when [setDynamicRange] is called.
  * @param setImageFormatAction The action to perform when [setImageFormat] is called.
  * @param setCaptureModeAction The action to perform when [setCaptureMode] is called.
+ * @param setExtensionModeAction The action to perform when [setExtensionMode] is called.
  */
 class FakeQuickSettingsController(
     var toggleQuickSettingsAction: () -> Unit = {},
@@ -41,7 +43,8 @@ class FakeQuickSettingsController(
     var setAspectRatioAction: (AspectRatio) -> Unit = {},
     var setDynamicRangeAction: (DynamicRange) -> Unit = {},
     var setImageFormatAction: (ImageOutputFormat) -> Unit = {},
-    var setCaptureModeAction: (CaptureMode) -> Unit = {}
+    var setCaptureModeAction: (CaptureMode) -> Unit = {},
+    var setExtensionModeAction: (CameraExtensionMode) -> Unit = {}
 ) : QuickSettingsController {
     override fun toggleQuickSettings() {
         toggleQuickSettingsAction()
@@ -69,5 +72,9 @@ class FakeQuickSettingsController(
 
     override fun setCaptureMode(captureMode: CaptureMode) {
         setCaptureModeAction(captureMode)
+    }
+
+    override fun setExtensionMode(extensionMode: CameraExtensionMode) {
+        setExtensionModeAction(extensionMode)
     }
 }

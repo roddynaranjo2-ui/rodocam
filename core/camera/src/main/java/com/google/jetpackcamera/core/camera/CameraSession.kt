@@ -25,6 +25,9 @@ import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.hardware.camera2.params.ColorSpaceTransform
+import android.hardware.camera2.params.RggbChannelVector
+import android.hardware.camera2.params.TonemapCurve
 import android.os.Build
 import android.os.SystemClock
 import android.provider.MediaStore
@@ -79,6 +82,7 @@ import com.google.jetpackcamera.model.Illuminant
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostState
+import com.google.jetpackcamera.model.ManualCapabilities
 import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
@@ -90,6 +94,8 @@ import com.google.jetpackcamera.model.VideoQuality.HD
 import com.google.jetpackcamera.model.VideoQuality.SD
 import com.google.jetpackcamera.model.VideoQuality.UHD
 import com.google.jetpackcamera.model.WhiteBalanceMode
+import com.google.jetpackcamera.model.buildShadowsTonemapCurve
+import com.google.jetpackcamera.model.kelvinToRggbGains
 import com.google.jetpackcamera.settings.model.CameraConstraints
 import java.io.File
 import java.io.FileNotFoundException
@@ -138,13 +144,22 @@ internal suspend fun runSingleCameraSession(
     onImageCaptureCreated: (ImageCapture) -> Unit = {}
 ) = coroutineScope {
     Log.d(TAG, "Starting new single camera session")
-    val initialCameraSelector = transientSettings.filterNotNull().first()
-        .primaryLensFacing.toCameraSelector()
+    // CameraX Extensions (Night/Bokeh/HDR/Face Retouch) only support Preview + ImageCapture.
+    // When an extension is active we bind through the extension-enabled selector, skip the
+    // video pipeline and any CameraEffect, and fall back to plain JPEG without ZSL.
+    val isExtensionEnabled = sessionSettings.extensionMode.isEnabled
+    if (isExtensionEnabled) {
+        Log.d(TAG, "Session running with CameraX extension ${sessionSettings.extensionMode}")
+    }
+    val initialCameraSelector = extensionsManager.extensionEnabledSelector(
+        transientSettings.filterNotNull().first().primaryLensFacing.toCameraSelector(),
+        sessionSettings.extensionMode
+    )
 
-    // only create video use case in standard or video_only
+    // only create video use case in standard or video_only (never alongside an extension)
     val videoCaptureUseCase = when (sessionSettings.captureMode) {
         CaptureMode.STANDARD, CaptureMode.VIDEO_ONLY ->
-            createVideoUseCase(
+            if (isExtensionEnabled) null else createVideoUseCase(
                 cameraProvider.getCameraInfo(initialCameraSelector),
                 sessionSettings.aspectRatio,
                 sessionSettings.targetFrameRate,
@@ -189,8 +204,10 @@ internal suspend fun runSingleCameraSession(
                 withContext(Dispatchers.Main.immediate) {
                     cameraProvider.unbindAll()
                 }
-                val currentCameraSelector = currentTransientSettings.primaryLensFacing
-                    .toCameraSelector()
+                val currentCameraSelector = extensionsManager.extensionEnabledSelector(
+                    currentTransientSettings.primaryLensFacing.toCameraSelector(),
+                    sessionSettings.extensionMode
+                )
                 val cameraInfo = cameraProvider.getCameraInfo(currentCameraSelector)
                 val camera2Info = Camera2CameraInfo.from(cameraInfo)
                 val cameraId = camera2Info.cameraId
@@ -227,22 +244,26 @@ internal suspend fun runSingleCameraSession(
                         )
                     }
                 }
-                if (cameraEffect == null) {
+                if (cameraEffect == null && !isExtensionEnabled) {
                     sessionSettings.activeCameraEffect?.let { key ->
                         cameraEffect = cameraEffectProviders[key]?.createEffect(this@sessionScope)
                     }
                 }
                 val useCaseGroup = createUseCaseGroup(
-                    cameraInfo = cameraProvider.getCameraInfo(currentCameraSelector),
+                    cameraInfo = cameraInfo,
                     videoCaptureUseCase = videoCaptureUseCase,
                     initialTransientSettings = currentTransientSettings,
                     stabilizationMode = sessionSettings.stabilizationMode,
                     aspectRatio = sessionSettings.aspectRatio,
-                    imageFormat = sessionSettings.imageFormat,
+                    imageFormat = if (isExtensionEnabled) {
+                        ImageOutputFormat.JPEG
+                    } else {
+                        sessionSettings.imageFormat
+                    },
                     captureMode = sessionSettings.captureMode,
-                    effect = cameraEffect,
-                    captureResults = captureResults
-
+                    effect = if (isExtensionEnabled) null else cameraEffect,
+                    captureResults = captureResults,
+                    isExtensionEnabled = isExtensionEnabled
                 ).apply {
                     getImageCapture()?.let(onImageCaptureCreated)
                 }
@@ -578,7 +599,8 @@ private suspend fun updateCamera2RequestOptions(
             controls = newManualControls,
             // Keep LLB's AE mode untouched: manual exposure and LLB are mutually exclusive in UI.
             preserveAeMode = newTransientSettings.flashMode == FlashMode.LOW_LIGHT_BOOST,
-            lastExposureInfo = currentCameraState.value.exposureInfo
+            lastExposureInfo = currentCameraState.value.exposureInfo,
+            capabilities = cameraConstraints?.manualCapabilities ?: ManualCapabilities.NONE
         )
         needsUpdate = true
     }
@@ -599,13 +621,19 @@ private suspend fun updateCamera2RequestOptions(
  * `SENSOR_SENSITIVITY` and `SENSOR_EXPOSURE_TIME` are supplied (Camera2 requires both in
  * manual mode). The missing one is taken from the last AE readout so the image brightness stays
  * continuous when the user pins just one value, exactly like Pixel's Pro controls.
+ *
+ * White balance: a kelvin value switches AWB off and drives `COLOR_CORRECTION_GAINS` with gains
+ * derived from the colour temperature (identity colour transform); a preset maps to the matching
+ * `CONTROL_AWB_MODE_*`. Shadows (Dual Exposure) install a `TONEMAP_MODE_CONTRAST_CURVE` built by
+ * [buildShadowsTonemapCurve] sized to the HAL's `TONEMAP_MAX_CURVE_POINTS`.
  */
 @ExperimentalCamera2Interop
 internal fun applyManualControls(
     optionsBuilder: CaptureRequestOptions.Builder,
     controls: ManualControls,
     preserveAeMode: Boolean,
-    lastExposureInfo: ExposureInfo
+    lastExposureInfo: ExposureInfo,
+    capabilities: ManualCapabilities = ManualCapabilities.NONE
 ) {
     // --- Exposure (ISO + shutter) ---
     val iso = controls.resolvedIso(lastExposureInfo.iso)
@@ -651,18 +679,68 @@ internal fun applyManualControls(
     }
 
     // --- White balance ---
+    val wbKelvin = controls.whiteBalanceKelvin?.takeIf { capabilities.supportsWhiteBalanceKelvin }
     val wb = controls.whiteBalance
-    if (wb != null && wb != WhiteBalanceMode.AUTO) {
+    if (wbKelvin != null) {
+        val gains = kelvinToRggbGains(wbKelvin)
         optionsBuilder
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, wb.toCamera2AwbMode())
+            .setCaptureRequestOption(
+                CaptureRequest.CONTROL_AWB_MODE,
+                CameraMetadata.CONTROL_AWB_MODE_OFF
+            )
+            .setCaptureRequestOption(
+                CaptureRequest.COLOR_CORRECTION_MODE,
+                CameraMetadata.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX
+            )
+            .setCaptureRequestOption(
+                CaptureRequest.COLOR_CORRECTION_GAINS,
+                RggbChannelVector(gains[0], gains[1], gains[2], gains[3])
+            )
+            .setCaptureRequestOption(
+                CaptureRequest.COLOR_CORRECTION_TRANSFORM,
+                IDENTITY_COLOR_TRANSFORM
+            )
             .clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK)
     } else {
-        optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE)
-        if (controls.awbLock) {
-            optionsBuilder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+        optionsBuilder
+            .clearCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE)
+            .clearCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_GAINS)
+            .clearCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_TRANSFORM)
+        if (wb != null && wb != WhiteBalanceMode.AUTO) {
+            optionsBuilder
+                .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, wb.toCamera2AwbMode())
+                .clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK)
         } else {
-            optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK)
+            optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE)
+            if (controls.awbLock) {
+                optionsBuilder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+            } else {
+                optionsBuilder.clearCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK)
+            }
         }
+    }
+
+    // --- Shadows (Dual Exposure) ---
+    val shadows = controls.shadowsBoost
+    if (shadows != null && shadows != 0f && capabilities.supportsShadowsBoost) {
+        val points = capabilities.maxTonemapCurvePoints.coerceIn(
+            ManualCapabilities.MIN_TONEMAP_CURVE_POINTS,
+            MAX_TONEMAP_CURVE_POINTS_USED
+        )
+        val curve = buildShadowsTonemapCurve(shadows, points)
+        optionsBuilder
+            .setCaptureRequestOption(
+                CaptureRequest.TONEMAP_MODE,
+                CameraMetadata.TONEMAP_MODE_CONTRAST_CURVE
+            )
+            .setCaptureRequestOption(
+                CaptureRequest.TONEMAP_CURVE,
+                TonemapCurve(curve, curve, curve)
+            )
+    } else {
+        optionsBuilder
+            .clearCaptureRequestOption(CaptureRequest.TONEMAP_MODE)
+            .clearCaptureRequestOption(CaptureRequest.TONEMAP_CURVE)
     }
 
     // --- Focus ---
@@ -680,6 +758,24 @@ internal fun applyManualControls(
             .clearCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE)
     }
 }
+
+/**
+ * Upper bound on tone curve points we send even if the HAL advertises more: 64 points is more than
+ * enough to sample a smooth power curve and keeps each capture request small.
+ */
+private const val MAX_TONEMAP_CURVE_POINTS_USED = 64
+
+/**
+ * Identity 3x3 colour transform (rational elements as `numerator, denominator` pairs). Combined
+ * with [CaptureRequest.COLOR_CORRECTION_GAINS] it makes white balance depend only on the gains.
+ */
+private val IDENTITY_COLOR_TRANSFORM = ColorSpaceTransform(
+    intArrayOf(
+        1, 1, 0, 1, 0, 1,
+        0, 1, 1, 1, 0, 1,
+        0, 1, 0, 1, 1, 1
+    )
+)
 
 internal fun applyDeviceRotation(deviceRotation: DeviceRotation, useCaseGroup: UseCaseGroup) {
     val targetRotation = deviceRotation.toUiSurfaceRotation()
@@ -714,7 +810,8 @@ internal fun createUseCaseGroup(
     imageFormat: ImageOutputFormat,
     captureMode: CaptureMode,
     effect: CameraEffect? = null,
-    captureResults: MutableStateFlow<TotalCaptureResult?>? = null
+    captureResults: MutableStateFlow<TotalCaptureResult?>? = null,
+    isExtensionEnabled: Boolean = false
 ): UseCaseGroup {
     val previewUseCase =
         createPreviewUseCase(
@@ -730,13 +827,16 @@ internal fun createUseCaseGroup(
             cameraInfo = cameraInfo,
             aspectRatio = aspectRatio,
             imageFormat = imageFormat,
-            // ZSL only makes sense for pure photo capture with no effects/HDR/video pipeline:
+            // ZSL only makes sense for pure photo capture with no effects/HDR/RAW/video pipeline:
             // CameraX ignores it when VideoCapture or an effect is bound, and it conflicts with
-            // Ultra HDR output. Enabling it in IMAGE_ONLY gives Pixel-like instant shutter.
+            // Ultra HDR and RAW output. Enabling it in IMAGE_ONLY gives Pixel-like instant shutter.
+            // HEIC is a plain JPEG at the HAL level, so it keeps ZSL. Extensions run their own
+            // multi-frame pipeline, so ZSL is never requested alongside them.
             preferZeroShutterLag = captureMode == CaptureMode.IMAGE_ONLY &&
+                !isExtensionEnabled &&
                 videoCaptureUseCase == null &&
                 effect == null &&
-                imageFormat == ImageOutputFormat.JPEG
+                (imageFormat == ImageOutputFormat.JPEG || imageFormat == ImageOutputFormat.HEIC)
         )
     } else {
         null
@@ -810,8 +910,9 @@ private fun createImageUseCase(
     builder.setResolutionSelector(
         getResolutionSelector(cameraInfo.sensorLandscapeRatio, aspectRatio)
     )
-    if (imageFormat == ImageOutputFormat.JPEG_ULTRA_HDR) {
-        builder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_JPEG_ULTRA_HDR)
+    val outputFormat = imageFormat.toCameraXOutputFormat()
+    if (outputFormat != ImageCapture.OUTPUT_FORMAT_JPEG) {
+        builder.setOutputFormat(outputFormat)
     }
     val zslSupported = try {
         cameraInfo.isZslSupported

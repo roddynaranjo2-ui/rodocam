@@ -65,6 +65,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DEFAULT_HDR_DYNAMIC_RANGE
 import com.google.jetpackcamera.model.DEFAULT_HDR_IMAGE_OUTPUT
@@ -74,6 +75,11 @@ import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_CAPTURE_MODE_OPTION_IMAGE_ONLY
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_CAPTURE_MODE_OPTION_STANDARD
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_CAPTURE_MODE_OPTION_VIDEO_ONLY
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_EXTENSION_OPTION_BOKEH
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_EXTENSION_OPTION_FACE_RETOUCH
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_EXTENSION_OPTION_HDR
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_EXTENSION_OPTION_NIGHT
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_EXTENSION_OPTION_OFF
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_FLASH_OPTION_AUTO
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_FLASH_OPTION_LOW_LIGHT_BOOST
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_FLASH_OPTION_OFF
@@ -88,17 +94,20 @@ import com.google.jetpackcamera.ui.components.capture.QUICK_SETTINGS_RATIO_9_16_
 import com.google.jetpackcamera.ui.components.capture.R
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_ASPECT_RATIO
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_CAPTURE_MODE
+import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_EXTENSION_MODE
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_FLASH
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_HDR
 import com.google.jetpackcamera.ui.components.capture.SETTINGS_BUTTON
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraAspectRatio
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraCaptureMode
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraDynamicRange
+import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraExtensionModeEnum
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraFlashMode
 import com.google.jetpackcamera.ui.components.capture.quicksettings.QuickSettingsEnum
 import com.google.jetpackcamera.ui.uistate.SingleSelectableUiState
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
 
@@ -303,6 +312,66 @@ internal fun HdrRow(
         },
         isItemEnabled = { isSupported }
     )
+}
+
+/**
+ * A row component in the quick settings menu that selects the CameraX Extensions scene mode
+ * (Night, Portrait, HDR, Face Retouch), mirroring the Pixel camera mode chips.
+ *
+ * Only the modes advertised by the current lens are shown, preceded by an "Off" chip. All chips
+ * are disabled (but still visible) when the current configuration cannot bind an extension
+ * session, e.g. in video-only or dual-camera mode.
+ *
+ * @param modifier The [Modifier] to be applied to this row.
+ * @param onSetExtensionMode Callback invoked when a new extension mode is selected.
+ * @param extensionModeUiState The current [ExtensionModeUiState].
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ExtensionModeRow(
+    modifier: Modifier = Modifier,
+    onSetExtensionMode: (CameraExtensionMode) -> Unit,
+    extensionModeUiState: ExtensionModeUiState
+) {
+    if (extensionModeUiState !is ExtensionModeUiState.Available) return
+    val items = remember(extensionModeUiState.availableModes) {
+        buildList {
+            add(SingleSelectableUiState.SelectableUi(CameraExtensionMode.NONE))
+            extensionModeUiState.availableModes.forEach {
+                add(SingleSelectableUiState.SelectableUi(it))
+            }
+        }
+    }
+    val selectedEnum = extensionModeUiState.selectedMode.toQuickSettingsEnum()
+
+    QuickSettingsListRow(
+        modifier = modifier.testTag(ROW_QUICK_SETTINGS_EXTENSION_MODE),
+        title = stringResource(id = R.string.quick_settings_title_extension_mode),
+        stateSubtitle = stringResource(id = selectedEnum.getTextResId()),
+        items = items,
+        selectedItem = extensionModeUiState.selectedMode,
+        onItemClick = onSetExtensionMode,
+        enumMapper = { it.toQuickSettingsEnum() },
+        testTagMapper = { mode ->
+            when (mode) {
+                CameraExtensionMode.NONE -> BTN_QUICK_SETTINGS_EXTENSION_OPTION_OFF
+                CameraExtensionMode.NIGHT -> BTN_QUICK_SETTINGS_EXTENSION_OPTION_NIGHT
+                CameraExtensionMode.BOKEH -> BTN_QUICK_SETTINGS_EXTENSION_OPTION_BOKEH
+                CameraExtensionMode.HDR -> BTN_QUICK_SETTINGS_EXTENSION_OPTION_HDR
+                CameraExtensionMode.FACE_RETOUCH ->
+                    BTN_QUICK_SETTINGS_EXTENSION_OPTION_FACE_RETOUCH
+            }
+        },
+        isItemEnabled = { extensionModeUiState.isSupported }
+    )
+}
+
+private fun CameraExtensionMode.toQuickSettingsEnum(): CameraExtensionModeEnum = when (this) {
+    CameraExtensionMode.NONE -> CameraExtensionModeEnum.OFF
+    CameraExtensionMode.NIGHT -> CameraExtensionModeEnum.NIGHT
+    CameraExtensionMode.BOKEH -> CameraExtensionModeEnum.BOKEH
+    CameraExtensionMode.HDR -> CameraExtensionModeEnum.HDR
+    CameraExtensionMode.FACE_RETOUCH -> CameraExtensionModeEnum.FACE_RETOUCH
 }
 
 /**

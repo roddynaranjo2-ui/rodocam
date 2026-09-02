@@ -172,7 +172,8 @@ class PreviewViewModel @Inject constructor(
     val quickSettingsController: QuickSettingsController = QuickSettingsControllerImpl(
         trackedCaptureUiState = trackedCaptureUiState,
         cameraSystem = cameraSystemRepository.cameraSystem,
-        coroutineContext = viewModelScope.coroutineContext
+        coroutineContext = viewModelScope.coroutineContext,
+        onExtensionModePersist = settingsRepository::updateExtensionMode
     )
 
     /**

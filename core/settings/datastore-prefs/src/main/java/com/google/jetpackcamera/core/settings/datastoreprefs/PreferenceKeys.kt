@@ -36,4 +36,5 @@ internal object PreferenceKeys {
     val KEY_TARGET_FRAME_RATE = intPreferencesKey("target_frame_rate")
     val KEY_CONCURRENT_CAMERA_MODE = stringPreferencesKey("concurrent_camera_mode")
     val KEY_PRO_MODE_ENABLED = booleanPreferencesKey("pro_mode_enabled")
+    val KEY_EXTENSION_MODE = stringPreferencesKey("extension_mode")
 }

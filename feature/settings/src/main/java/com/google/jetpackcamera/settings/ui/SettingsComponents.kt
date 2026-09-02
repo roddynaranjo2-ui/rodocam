@@ -65,6 +65,7 @@ import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
+import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.NONE_EFFECT_ID
@@ -85,6 +86,7 @@ import com.google.jetpackcamera.settings.FIVE_SECONDS_DURATION
 import com.google.jetpackcamera.settings.FlashUiState
 import com.google.jetpackcamera.settings.FlipLensUiState
 import com.google.jetpackcamera.settings.FpsUiState
+import com.google.jetpackcamera.settings.ImageFormatUiState
 import com.google.jetpackcamera.settings.LowLightBoostPriorityUiState
 import com.google.jetpackcamera.settings.MaxVideoDurationUiState
 import com.google.jetpackcamera.settings.R
@@ -779,6 +781,67 @@ fun StabilizationSetting(
             }
         }
     )
+}
+
+/**
+ * Setting to choose the still-image container: JPEG, Ultra HDR, HEIC or RAW + JPEG.
+ *
+ * Options are rendered in the order of [ImageFormatUiState.Enabled.optionStates]; unsupported
+ * formats stay visible but disabled so the user learns what the device can do.
+ */
+@Composable
+fun ImageFormatSetting(
+    imageFormatUiState: ImageFormatUiState,
+    setImageFormat: (ImageOutputFormat) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BasicPopupSetting(
+        modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_IMAGE_FORMAT_TAG),
+        title = stringResource(R.string.image_format_title),
+        leadingIcon = null,
+        enabled = imageFormatUiState is ImageFormatUiState.Enabled,
+        description = when (imageFormatUiState) {
+            is ImageFormatUiState.Enabled ->
+                stringResource(getImageFormatStringRes(imageFormatUiState.currentImageFormat))
+
+            is ImageFormatUiState.Disabled ->
+                disabledRationaleString(imageFormatUiState.disabledRationale)
+        },
+        popupContents = {
+            if (imageFormatUiState is ImageFormatUiState.Enabled) {
+                Column(Modifier.selectableGroup()) {
+                    imageFormatUiState.optionStates.forEach { (format, optionState) ->
+                        SingleChoiceSelector(
+                            modifier = Modifier.testTag(
+                                BTN_DIALOG_IMAGE_FORMAT_OPTION_PREFIX + format.name.lowercase()
+                            ),
+                            text = stringResource(getImageFormatStringRes(format)),
+                            secondaryText = stringResource(
+                                getImageFormatSecondaryStringRes(format)
+                            ),
+                            selected = imageFormatUiState.currentImageFormat == format,
+                            enabled = optionState is SingleSelectableState.Selectable,
+                            onClick = { setImageFormat(format) }
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+private fun getImageFormatStringRes(format: ImageOutputFormat): Int = when (format) {
+    ImageOutputFormat.JPEG -> R.string.image_format_value_jpeg
+    ImageOutputFormat.JPEG_ULTRA_HDR -> R.string.image_format_value_ultra_hdr
+    ImageOutputFormat.HEIC -> R.string.image_format_value_heic
+    ImageOutputFormat.RAW_JPEG -> R.string.image_format_value_raw_jpeg
+}
+
+private fun getImageFormatSecondaryStringRes(format: ImageOutputFormat): Int = when (format) {
+    ImageOutputFormat.JPEG -> R.string.image_format_value_jpeg_info
+    ImageOutputFormat.JPEG_ULTRA_HDR -> R.string.image_format_value_ultra_hdr_info
+    ImageOutputFormat.HEIC -> R.string.image_format_value_heic_info
+    ImageOutputFormat.RAW_JPEG -> R.string.image_format_value_raw_jpeg_info
 }
 
 @Composable

@@ -281,6 +281,7 @@ dependencies {
 
     // Postprocess implementations
     implementation(project(":core:camera:postprocess:postprocess-di"))
+    implementation(project(":core:camera:postprocess:heic"))
 
     implementation(project(":core:camera:low-light-playservices"))
     implementation(project(":core:camera:effects:single-stream"))

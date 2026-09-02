@@ -20,6 +20,7 @@ import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
+import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
@@ -61,7 +62,11 @@ sealed interface SettingsUiState {
         val videoQualityUiState: VideoQualityUiState,
         val audioUiState: AudioUiState,
         val lowLightBoostPriorityUiState: LowLightBoostPriorityUiState,
-        val concurrentCameraUiState: ConcurrentCameraUiState
+        val concurrentCameraUiState: ConcurrentCameraUiState,
+        val imageFormatUiState: ImageFormatUiState = ImageFormatUiState.Enabled(
+            currentImageFormat = ImageOutputFormat.JPEG,
+            optionStates = mapOf(ImageOutputFormat.JPEG to SingleSelectableState.Selectable)
+        )
     ) : SettingsUiState
 }
 
@@ -305,6 +310,21 @@ sealed interface DarkModeUiState {
 sealed interface MaxVideoDurationUiState {
     data class Enabled(val currentMaxDurationMillis: Long, val additionalContext: String = "") :
         MaxVideoDurationUiState
+}
+
+/**
+ * State of the "Image format" setting (JPEG / Ultra HDR / RAW + JPEG / HEIC).
+ *
+ * [Enabled.optionStates] is ordered: keys are rendered as dialog rows in iteration order, values
+ * tell whether each row is selectable on the current default lens.
+ */
+sealed interface ImageFormatUiState {
+    data class Enabled(
+        val currentImageFormat: ImageOutputFormat,
+        val optionStates: Map<ImageOutputFormat, SingleSelectableState>
+    ) : ImageFormatUiState
+
+    data class Disabled(val disabledRationale: DisabledRationale) : ImageFormatUiState
 }
 
 sealed interface VideoQualityUiState {

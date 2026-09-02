@@ -35,10 +35,13 @@ sealed interface FocusMeteringUiState {
      *
      * @param surfaceCoordinates The coordinates on the surface where the user tapped.
      * @param status The current [Status] of the focus and metering operation.
+     * @param isLocked True when focus/exposure are locked at this point (long-press AE/AF lock).
+     *   The indicator stays visible with a lock badge until the next tap.
      */
     data class Specified(
         val surfaceCoordinates: Offset,
-        val status: Status
+        val status: Status,
+        val isLocked: Boolean = false
     ) : FocusMeteringUiState
 
     /**

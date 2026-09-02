@@ -116,6 +116,19 @@
     <!-- QuickSettings Titles -->
     <string name="quick_settings_title_capture_mode">Capture Mode</string>
     <string name="quick_settings_title_hdr">HDR</string>
+    <string name="quick_settings_title_extension_mode">Scene mode</string>
+
+    <!-- CameraX Extensions (vendor scene modes) Text -->
+    <string name="quick_settings_extension_off">Off</string>
+    <string name="quick_settings_extension_night">Night</string>
+    <string name="quick_settings_extension_bokeh">Portrait</string>
+    <string name="quick_settings_extension_hdr">HDR+</string>
+    <string name="quick_settings_extension_face_retouch">Retouch</string>
+    <string name="quick_settings_extension_off_description">Scene mode off</string>
+    <string name="quick_settings_extension_night_description">Night mode: multi-frame low-light capture</string>
+    <string name="quick_settings_extension_bokeh_description">Portrait mode: background blur</string>
+    <string name="quick_settings_extension_hdr_description">HDR scene mode: multi-frame high dynamic range</string>
+    <string name="quick_settings_extension_face_retouch_description">Face retouch: skin smoothing</string>
     <string name="quick_settings_title_aspect_ratio">Aspect Ratio</string>
     <string name="quick_settings_title_flash_mode">Flash Mode</string>
 
@@ -147,6 +160,8 @@
     <string name="pro_ae_lock_label">AE</string>
     <string name="pro_reset_label">Reset</string>
     <string name="pro_value_auto">Auto</string>
+    <string name="pro_state_manual">Manual</string>
+    <string name="pro_mode_toggle_description">Pro mode</string>
     <string name="pro_value_locked">Locked</string>
     <string name="pro_value_unlocked">Unlocked</string>
     <string name="pro_wb_auto">Auto</string>
@@ -157,4 +172,7 @@
     <string name="pro_wb_cloudy">Cloudy</string>
     <string name="pro_wb_twilight">Twilight</string>
     <string name="pro_wb_shade">Shade</string>
+    <string name="pro_wb_kelvin_label">K</string>
+    <string name="pro_shadows_label">Shadows</string>
+    <string name="focus_exposure_locked_description">Focus and exposure locked</string>
 </resources>

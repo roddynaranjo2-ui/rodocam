@@ -28,6 +28,7 @@ const val PREVIEW_DISPLAY = "PreviewDisplay"
 const val SCREEN_FLASH_OVERLAY = "ScreenFlashOverlay"
 const val AUDIO_INPUT_TOGGLE = "AudioInputToggle"
 const val FOCUS_METERING_INDICATOR_TAG = "FocusMeteringIndicatorTag"
+const val FOCUS_LOCK_BADGE_TAG = "FocusLockBadgeTag"
 
 enum class AudioInputState {
     OFF,
@@ -90,8 +91,16 @@ const val BTN_QUICK_SETTINGS_FLASH_OPTION_LOW_LIGHT_BOOST =
 const val BTN_QUICK_SETTINGS_HDR_OPTION_ON = "btn_quick_settings_hdr_option_on"
 const val BTN_QUICK_SETTINGS_HDR_OPTION_OFF = "btn_quick_settings_hdr_option_off"
 
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_OFF = "btn_quick_settings_extension_option_off"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_NIGHT = "btn_quick_settings_extension_option_night"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_BOKEH = "btn_quick_settings_extension_option_bokeh"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_HDR = "btn_quick_settings_extension_option_hdr"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_FACE_RETOUCH =
+    "btn_quick_settings_extension_option_face_retouch"
+
 const val ROW_QUICK_SETTINGS_CAPTURE_MODE = "row_quick_settings_capture_mode"
 const val ROW_QUICK_SETTINGS_HDR = "row_quick_settings_hdr"
+const val ROW_QUICK_SETTINGS_EXTENSION_MODE = "row_quick_settings_extension_mode"
 const val ROW_QUICK_SETTINGS_ASPECT_RATIO = "row_quick_settings_aspect_ratio"
 const val ROW_QUICK_SETTINGS_FLASH = "row_quick_settings_flash"
 
@@ -110,3 +119,7 @@ const val PRO_SLIDER_SHUTTER_TAG = "pro_slider_shutter_tag"
 const val PRO_SLIDER_EV_TAG = "pro_slider_ev_tag"
 const val PRO_SLIDER_FOCUS_TAG = "pro_slider_focus_tag"
 const val PRO_WB_CHIP_PREFIX = "pro_wb_chip_"
+const val PRO_CHIP_SHADOWS_TAG = "pro_chip_shadows_tag"
+const val PRO_SLIDER_SHADOWS_TAG = "pro_slider_shadows_tag"
+const val PRO_CHIP_WB_KELVIN_TAG = "pro_chip_wb_kelvin_tag"
+const val PRO_SLIDER_WB_KELVIN_TAG = "pro_slider_wb_kelvin_tag"

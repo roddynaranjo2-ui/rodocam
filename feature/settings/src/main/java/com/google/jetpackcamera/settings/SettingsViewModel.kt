@@ -67,6 +67,14 @@ private const val TAG = "SettingsViewModel"
 private val fpsOptions =
     linkedSetOf(TARGET_FPS_15, TARGET_FPS_24, TARGET_FPS_30, TARGET_FPS_60, TARGET_FPS_120)
 
+/** Display order of the image-format dialog rows. */
+private val IMAGE_FORMAT_OPTIONS = listOf(
+    ImageOutputFormat.JPEG,
+    ImageOutputFormat.JPEG_ULTRA_HDR,
+    ImageOutputFormat.HEIC,
+    ImageOutputFormat.RAW_JPEG
+)
+
 /**
  * [ViewModel] for [SettingsScreen].
  */
@@ -103,7 +111,8 @@ class SettingsViewModel @Inject constructor(
                 lowLightBoostPriorityUiState = LowLightBoostPriorityUiState.Enabled(
                     updatedSettings.lowLightBoostPriority
                 ),
-                concurrentCameraUiState = getConcurrentCameraUiState(constraints, updatedSettings)
+                concurrentCameraUiState = getConcurrentCameraUiState(constraints, updatedSettings),
+                imageFormatUiState = getImageFormatUiState(constraints, updatedSettings)
             )
         }.stateIn(
             scope = viewModelScope,
@@ -430,6 +439,45 @@ class SettingsViewModel @Inject constructor(
         return SingleSelectableState.Selectable
     }
 
+    /**
+     * Builds the "Image format" setting state. Every format the app knows is listed; the ones the
+     * current default lens cannot produce are shown disabled with a device-unsupported rationale.
+     * Concurrent (dual) camera is JPEG-only, so the whole setting is disabled in that mode.
+     */
+    private fun getImageFormatUiState(
+        systemConstraints: CameraSystemConstraints,
+        cameraAppSettings: CameraAppSettings
+    ): ImageFormatUiState {
+        if (cameraAppSettings.concurrentCameraMode == ConcurrentCameraMode.DUAL) {
+            return ImageFormatUiState.Disabled(
+                DisabledRationale.ConcurrentCameraActiveRationale(
+                    R.string.image_format_rationale_prefix
+                )
+            )
+        }
+        val cameraConstraints = systemConstraints.forCurrentLens(cameraAppSettings)
+        val effectAffectsImageCapture = cameraConstraints?.effectTargetsMap
+            ?.get(cameraAppSettings.selectedCameraEffect)
+            ?.contains(com.google.jetpackcamera.model.CameraEffectTarget.IMAGE_CAPTURE) == true
+        val supported = cameraConstraints?.supportedImageFormatsMap
+            ?.get(effectAffectsImageCapture)
+            ?: setOf(ImageOutputFormat.JPEG)
+
+        val optionStates = IMAGE_FORMAT_OPTIONS.associateWithTo(LinkedHashMap()) { format ->
+            if (format == ImageOutputFormat.JPEG || format in supported) {
+                SingleSelectableState.Selectable
+            } else {
+                SingleSelectableState.Disabled(
+                    DeviceUnsupportedRationale(R.string.image_format_rationale_prefix)
+                )
+            }
+        }
+        return ImageFormatUiState.Enabled(
+            currentImageFormat = cameraAppSettings.imageFormat,
+            optionStates = optionStates
+        )
+    }
+
     private fun getVideoQualityUiState(
         systemConstraints: CameraSystemConstraints,
         cameraAppSettings: CameraAppSettings
@@ -746,6 +794,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.updateVideoQuality(videoQuality)
             Log.d(TAG, "set video quality: $videoQuality ms")
+        }
+    }
+
+    fun setImageFormat(imageFormat: ImageOutputFormat) {
+        viewModelScope.launch {
+            settingsRepository.updateImageFormat(imageFormat)
+            Log.d(TAG, "set image format: $imageFormat")
         }
     }
 

@@ -17,6 +17,7 @@ package com.google.jetpackcamera.settings.testing
 
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -110,6 +111,11 @@ class FakeSettingsRepository(
     override suspend fun updateProModeEnabled(isProModeEnabled: Boolean) {
         _defaultCameraAppSettings.value =
             _defaultCameraAppSettings.value.copy(isProModeEnabled = isProModeEnabled)
+    }
+
+    override suspend fun updateExtensionMode(extensionMode: CameraExtensionMode) {
+        _defaultCameraAppSettings.value =
+            _defaultCameraAppSettings.value.copy(extensionMode = extensionMode)
     }
 
     override suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {

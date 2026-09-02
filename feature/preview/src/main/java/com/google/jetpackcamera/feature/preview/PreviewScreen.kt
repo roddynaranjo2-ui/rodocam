@@ -422,9 +422,33 @@ private fun ContentScreen(
             { _: Float, _: Float -> }
         }
     }
+    val onLockFocusAndExposureLambda: ((Float, Float) -> Unit)? = remember(cameraController) {
+        cameraController?.let { controller ->
+            { x: Float, y: Float -> controller.lockFocusAndExposure(x, y) }
+        }
+    }
     val onScaleZoomLambda = remember {
         { zoomRatio: Float ->
             scope.launch { zoomStateManager.scaleZoom(zoomRatio, LensToZoom.PRIMARY) }
+        }
+    }
+    // Pixel: double tap on the viewfinder toggles between 1x and 2x (or back to 1x from any other
+    // zoom). Only offered when the lens actually reaches 2x, otherwise the gesture is disabled so
+    // that a double tap does nothing surprising.
+    val onDoubleTapZoomLambda: (() -> Unit)? = remember(zoomStateManager) {
+        {
+            val range = (zoomUiState.value as? ZoomUiState.Enabled)?.primaryZoomRange
+            val current = (zoomControlState.value as? ZoomControlUiState.Enabled)?.primaryZoomRatio
+            val target = range?.let { doubleTapZoomTarget(current, it.lower, it.upper) }
+            if (target != null) {
+                scope.launch {
+                    zoomStateManager.animatedZoom(
+                        targetZoomLevel = target,
+                        animationSpec = tween(durationMillis = DOUBLE_TAP_ZOOM_ANIMATION_MILLIS),
+                        lensToZoom = LensToZoom.PRIMARY
+                    )
+                }
+            }
         }
     }
 
@@ -443,6 +467,8 @@ private fun ContentScreen(
         focusMeteringState,
         onFlipCamera,
         onTapToFocusLambda,
+        onLockFocusAndExposureLambda,
+        onDoubleTapZoomLambda,
         onScaleZoomLambda,
         surfaceRequest,
         onRequestWindowColorMode
@@ -455,7 +481,9 @@ private fun ContentScreen(
                 onScaleZoom = { zoomRatio -> onScaleZoomLambda(zoomRatio) },
                 surfaceRequest = surfaceRequest,
                 onRequestWindowColorMode = onRequestWindowColorMode,
-                focusMeteringUiState = focusMeteringState.value
+                focusMeteringUiState = focusMeteringState.value,
+                onLockFocusAndExposure = onLockFocusAndExposureLambda,
+                onDoubleTapZoom = onDoubleTapZoomLambda
             )
         }
     }
@@ -521,10 +549,31 @@ private fun ContentScreen(
         }
     }
 
+    // Stable callbacks: created once per controller/manager so the row below does not allocate
+    // new lambdas (and invalidate the remembered composable) on every zoom/exposure update.
+    val onChangeZoomLambda: (Float) -> Unit = remember(zoomStateManager) {
+        { targetZoom ->
+            scope.launch {
+                zoomStateManager.animatedZoom(
+                    targetZoomLevel = targetZoom,
+                    lensToZoom = LensToZoom.PRIMARY
+                )
+            }
+        }
+    }
+    val onToggleProModeLambda: () -> Unit = remember(manualControlsController) {
+        {
+            val enabled = (manualControlsState.value as? ManualControlsUiState.Available)
+                ?.isProModeEnabled ?: false
+            manualControlsController?.setProModeEnabled(!enabled)
+        }
+    }
     val zoomLevelDisplayLambda = remember(
         zoomControlState,
         manualControlsState,
-        manualControlsController
+        manualControlsController,
+        onChangeZoomLambda,
+        onToggleProModeLambda
     ) {
         @Composable { modifier: Modifier ->
             Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -539,23 +588,11 @@ private fun ContentScreen(
                 ) {
                     ZoomButtonRow(
                         zoomControlUiState = zoomControlState.value,
-                        onChangeZoom = { targetZoom ->
-                            scope.launch {
-                                zoomStateManager.animatedZoom(
-                                    targetZoomLevel = targetZoom,
-                                    lensToZoom = LensToZoom.PRIMARY
-                                )
-                            }
-                        }
+                        onChangeZoom = onChangeZoomLambda
                     )
                     ProModeToggle(
                         manualControlsUiState = manualControlsState.value,
-                        onToggle = {
-                            val enabled = (
-                                manualControlsState.value as? ManualControlsUiState.Available
-                                )?.isProModeEnabled ?: false
-                            manualControlsController?.setProModeEnabled(!enabled)
-                        }
+                        onToggle = onToggleProModeLambda
                     )
                 }
             }

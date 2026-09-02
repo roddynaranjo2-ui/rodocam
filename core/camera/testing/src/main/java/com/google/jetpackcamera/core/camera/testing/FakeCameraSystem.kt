@@ -21,9 +21,11 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.SurfaceRequest
 import com.google.jetpackcamera.core.camera.CameraState
 import com.google.jetpackcamera.core.camera.CameraSystem
+import com.google.jetpackcamera.core.camera.FocusState
 import com.google.jetpackcamera.core.camera.OnVideoRecordEvent
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
@@ -188,6 +190,12 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
         }
     }
 
+    override suspend fun setExtensionMode(extensionMode: CameraExtensionMode) {
+        currentSettings.update { old ->
+            old.copy(extensionMode = extensionMode)
+        }
+    }
+
     override fun getCurrentCameraState(): StateFlow<CameraState> = _currentCameraState.asStateFlow()
 
     private val _systemConstraints = MutableStateFlow<CameraSystemConstraints?>(null)
@@ -243,8 +251,30 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
         }
     }
 
+    /** Records every focus/metering request as `(x, y, locked)` so tests can assert on them. */
+    val focusMeteringRequests = mutableListOf<Triple<Float, Float, Boolean>>()
+
     override suspend fun tapToFocus(x: Float, y: Float) {
-        TODO("Not yet implemented")
+        focusMeteringRequests += Triple(x, y, false)
+        updateFocusState(x, y, isLocked = false)
+    }
+
+    override suspend fun lockFocusAndExposure(x: Float, y: Float) {
+        focusMeteringRequests += Triple(x, y, true)
+        updateFocusState(x, y, isLocked = true)
+    }
+
+    private fun updateFocusState(x: Float, y: Float, isLocked: Boolean) {
+        _currentCameraState.update { old ->
+            old.copy(
+                focusState = FocusState.Specified(
+                    x = x,
+                    y = y,
+                    status = FocusState.Status.SUCCESS,
+                    isLocked = isLocked
+                )
+            )
+        }
     }
 
     override suspend fun setCameraEffect(cameraEffect: CameraEffectId) {

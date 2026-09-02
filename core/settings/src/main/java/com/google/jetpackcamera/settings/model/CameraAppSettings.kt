@@ -17,6 +17,7 @@ package com.google.jetpackcamera.settings.model
 
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
@@ -64,7 +65,12 @@ data class CameraAppSettings(
      */
     val manualControls: ManualControls = ManualControls.AUTO,
     /** Whether the Pro controls panel is enabled in the viewfinder (persisted user preference). */
-    val isProModeEnabled: Boolean = false
+    val isProModeEnabled: Boolean = false,
+    /**
+     * Vendor extension (Night, Portrait/Bokeh, HDR, Face retouch) bound to the session. Persisted
+     * so the user returns to the mode they last used, like Pixel Camera remembers Night Sight.
+     */
+    val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE
 )
 
 fun CameraSystemConstraints.forCurrentLens(

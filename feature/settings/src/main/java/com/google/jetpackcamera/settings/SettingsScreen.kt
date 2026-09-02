@@ -45,6 +45,7 @@ import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
+import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
@@ -55,6 +56,7 @@ import com.google.jetpackcamera.settings.ui.ConcurrentCameraSetting
 import com.google.jetpackcamera.settings.ui.DarkModeSetting
 import com.google.jetpackcamera.settings.ui.DefaultCameraFacing
 import com.google.jetpackcamera.settings.ui.FlashModeSetting
+import com.google.jetpackcamera.settings.ui.ImageFormatSetting
 import com.google.jetpackcamera.settings.ui.LowLightBoostPrioritySetting
 import com.google.jetpackcamera.settings.ui.MaxVideoDurationSetting
 import com.google.jetpackcamera.settings.ui.RecordingAudioSetting
@@ -95,7 +97,8 @@ fun SettingsScreen(
         setDarkMode = viewModel::setDarkMode,
         setVideoQuality = viewModel::setVideoQuality,
         setLowLightBoostPriority = viewModel::setLowLightBoostPriority,
-        setConcurrentCameraMode = viewModel::setConcurrentCameraMode
+        setConcurrentCameraMode = viewModel::setConcurrentCameraMode,
+        setImageFormat = viewModel::setImageFormat
     )
     val permissionStates = rememberMultiplePermissionsState(
         permissions =
@@ -132,7 +135,8 @@ private fun SettingsScreen(
     setDarkMode: (DarkMode) -> Unit = {},
     setVideoQuality: (VideoQuality) -> Unit = {},
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit = {},
-    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {}
+    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
+    setImageFormat: (ImageOutputFormat) -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
         rememberTopAppBarState()
@@ -170,7 +174,8 @@ private fun SettingsScreen(
                     setDarkMode = setDarkMode,
                     setVideoQuality = setVideoQuality,
                     setLowLightBoostPriority = setLowLightBoostPriority,
-                    setConcurrentCameraMode = setConcurrentCameraMode
+                    setConcurrentCameraMode = setConcurrentCameraMode,
+                    setImageFormat = setImageFormat
                 )
             }
         }
@@ -192,7 +197,8 @@ internal fun SettingsList(
     setVideoQuality: (VideoQuality) -> Unit = {},
     setMaxVideoDuration: (Long) -> Unit = {},
     setDarkMode: (DarkMode) -> Unit = {},
-    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {}
+    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
+    setImageFormat: (ImageOutputFormat) -> Unit = {}
 ) {
     SectionHeader(title = stringResource(id = R.string.section_title_camera_settings))
 
@@ -219,6 +225,11 @@ internal fun SettingsList(
     CameraEffectSetting(
         cameraEffectUiState = uiState.cameraEffectUiState,
         setCameraEffect = setCameraEffect
+    )
+
+    ImageFormatSetting(
+        imageFormatUiState = uiState.imageFormatUiState,
+        setImageFormat = setImageFormat
     )
 
     LowLightBoostPrioritySetting(

@@ -79,16 +79,24 @@ internal suspend fun CameraSessionContext.processFocusMeteringEvents(
                                 focusState = FocusState.Specified(
                                     x = event.x,
                                     y = event.y,
-                                    status = status
+                                    status = status,
+                                    isLocked = event.lock
                                 )
                             )
                         }
                     }
 
                     val meteringPoint = createPoint(event.x, event.y)
-                    val action = FocusMeteringAction.Builder(meteringPoint)
-                        .setAutoCancelDuration(AUTO_FOCUS_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                        .build()
+                    val action = FocusMeteringAction.Builder(meteringPoint).apply {
+                        if (event.lock) {
+                            // Pixel-style AE/AF lock: keep the AF/AE/AWB regions and the
+                            // converged focus/exposure until the next tap starts a new action
+                            // (which cancels this one) or the session ends.
+                            disableAutoCancel()
+                        } else {
+                            setAutoCancelDuration(AUTO_FOCUS_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                        }
+                    }.build()
 
                     if (!cameraInfo.isFocusMeteringSupported(action)) {
                         Log.w(TAG, "Focus metering not supported for action: $action")

@@ -130,15 +130,24 @@ class CameraControllerImpl(
 
     override fun tapToFocus(x: Float, y: Float) {
         Log.d(TAG, "tapToFocus")
+        launchFocusAction("tapToFocus") { cameraSystem.tapToFocus(x, y) }
+    }
+
+    override fun lockFocusAndExposure(x: Float, y: Float) {
+        Log.d(TAG, "lockFocusAndExposure")
+        launchFocusAction("lockFocusAndExposure") { cameraSystem.lockFocusAndExposure(x, y) }
+    }
+
+    private fun launchFocusAction(name: String, action: suspend () -> Unit) {
         scope.launch {
             try {
-                cameraSystem.tapToFocus(x, y)
+                action()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // Focus/metering can legitimately fail (camera closing, unsupported region).
                 // It must never take the whole viewfinder down.
-                Log.w(TAG, "tapToFocus failed", e)
+                Log.w(TAG, "$name failed", e)
             }
         }
     }

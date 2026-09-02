@@ -18,6 +18,7 @@ package com.google.jetpackcamera.ui.controller.impl
 import com.google.common.truth.Truth.assertThat
 import com.google.jetpackcamera.core.camera.testing.FakeCameraSystem
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
@@ -111,6 +112,32 @@ internal class QuickSettingsControllerImplTest {
         assertThat(
             cameraSystem.getCurrentSettings().value?.captureMode
         ).isEqualTo(CaptureMode.VIDEO_ONLY)
+    }
+
+    @Test
+    fun setExtensionMode_mutatesCameraSystem() = testScope.runTest {
+        controller.setExtensionMode(CameraExtensionMode.NIGHT)
+        advanceUntilIdle()
+        assertThat(
+            cameraSystem.getCurrentSettings().value?.extensionMode
+        ).isEqualTo(CameraExtensionMode.NIGHT)
+    }
+
+    @Test
+    fun setExtensionMode_persistsThroughCallback() = testScope.runTest {
+        var persisted: CameraExtensionMode? = null
+        val persistingController = QuickSettingsControllerImpl(
+            trackedCaptureUiState = trackedCaptureUiState,
+            cameraSystem = cameraSystem,
+            coroutineContext = testDispatcher,
+            onExtensionModePersist = { persisted = it }
+        )
+
+        persistingController.setExtensionMode(CameraExtensionMode.BOKEH)
+        advanceUntilIdle()
+
+        assertThat(persisted).isEqualTo(CameraExtensionMode.BOKEH)
+        persistingController.cancelScope().join()
     }
 
     @Test

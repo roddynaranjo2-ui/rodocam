@@ -38,8 +38,23 @@ interface ManualControlsController {
     /** Sets exposure compensation in device steps (index), or `null`/0 for none. */
     fun setExposureCompensationIndex(index: Int?)
 
-    /** Sets a white balance preset, or `null`/[WhiteBalanceMode.AUTO] for auto. */
+    /**
+     * Sets a white balance preset, or `null`/[WhiteBalanceMode.AUTO] for auto. Clears any kelvin
+     * value so the preset takes effect.
+     */
     fun setWhiteBalance(mode: WhiteBalanceMode?)
+
+    /**
+     * Pins the white balance to a colour temperature in kelvin (overrides presets), or `null` to
+     * go back to the preset / auto.
+     */
+    fun setWhiteBalanceKelvin(kelvin: Int?)
+
+    /**
+     * Sets the Dual Exposure "shadows" adjustment in `-1f..1f`, or `null`/0 for the HAL default
+     * tone curve.
+     */
+    fun setShadowsBoost(shadows: Float?)
 
     /** Pins the focus distance in diopters (0 = infinity), or `null` for autofocus. */
     fun setFocusDistance(diopters: Float?)

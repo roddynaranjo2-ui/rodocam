@@ -46,8 +46,14 @@ enum class WhiteBalanceMode {
  * @property exposureCompensationIndex Exposure compensation in *steps* (index), interpreted with
  *   the device's EV step (e.g. 1/3 EV). Ignored when ISO/shutter are manual. `null` = 0.
  * @property whiteBalance White balance preset. `null`/[WhiteBalanceMode.AUTO] = auto.
+ * @property whiteBalanceKelvin Manual colour temperature in kelvin. When set it takes precedence
+ *   over [whiteBalance]: AWB is switched off and per-channel gains derived from the temperature
+ *   are applied (see [kelvinToRggbGains]). `null` = use [whiteBalance]/auto.
  * @property focusDistanceDiopters Manual focus distance in diopters (0 = infinity,
  *   `minimumFocusDistance` = closest). `null` = autofocus.
+ * @property shadowsBoost Pixel-style "Dual Exposure" shadows control in `-1f..1f`. Positive
+ *   values lift shadows, negative values deepen them, `0f`/`null` = HAL default tone mapping.
+ *   The "brightness" half of Dual Exposure is [exposureCompensationIndex].
  * @property aeLock Whether auto-exposure is locked (long-press on viewfinder on Pixel).
  * @property awbLock Whether auto-white-balance is locked.
  */
@@ -56,7 +62,9 @@ data class ManualControls(
     val exposureTimeNanos: Long? = null,
     val exposureCompensationIndex: Int? = null,
     val whiteBalance: WhiteBalanceMode? = null,
+    val whiteBalanceKelvin: Int? = null,
     val focusDistanceDiopters: Float? = null,
+    val shadowsBoost: Float? = null,
     val aeLock: Boolean = false,
     val awbLock: Boolean = false
 ) {
@@ -64,9 +72,18 @@ data class ManualControls(
     val isManualExposure: Boolean
         get() = iso != null || exposureTimeNanos != null
 
-    /** True when white balance is pinned to a preset other than AUTO. */
+    /** True when white balance is pinned (kelvin value or a preset other than AUTO). */
     val isManualWhiteBalance: Boolean
-        get() = whiteBalance != null && whiteBalance != WhiteBalanceMode.AUTO
+        get() = whiteBalanceKelvin != null ||
+            (whiteBalance != null && whiteBalance != WhiteBalanceMode.AUTO)
+
+    /** True when white balance is driven by an explicit colour temperature. */
+    val isKelvinWhiteBalance: Boolean
+        get() = whiteBalanceKelvin != null
+
+    /** True when the shadows tone curve differs from the HAL default. */
+    val isShadowsAdjusted: Boolean
+        get() = shadowsBoost != null && shadowsBoost != 0f
 
     /** True when the focus distance is pinned. */
     val isManualFocus: Boolean
@@ -103,6 +120,18 @@ data class ManualControls(
     companion object {
         /** Everything automatic. */
         val AUTO = ManualControls()
+
+        /** Colour temperatures the kelvin white balance slider may select. */
+        val WHITE_BALANCE_KELVIN_RANGE: IntRange = 2000..10000
+
+        /** Neutral colour temperature (D65 daylight), used as the slider default. */
+        const val WHITE_BALANCE_KELVIN_NEUTRAL: Int = 6500
+
+        /** Step used by the kelvin slider. */
+        const val WHITE_BALANCE_KELVIN_STEP: Int = 100
+
+        /** Allowed range of [shadowsBoost]. */
+        val SHADOWS_RANGE: ClosedFloatingPointRange<Float> = -1f..1f
     }
 }
 
@@ -122,6 +151,11 @@ data class ManualControls(
  * @property isAwbLockSupported `CONTROL_AWB_LOCK_AVAILABLE`.
  * @property isRawSupported `REQUEST_AVAILABLE_CAPABILITIES_RAW`.
  * @property isZslSupported Whether zero-shutter-lag capture is supported.
+ * @property isManualPostProcessingSupported
+ *   `REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING` (colour correction + tone mapping).
+ * @property isAwbOffSupported Whether `CONTROL_AWB_MODE_OFF` is in `CONTROL_AWB_AVAILABLE_MODES`.
+ * @property isTonemapCurveSupported Whether `TONEMAP_MODE_CONTRAST_CURVE` is available.
+ * @property maxTonemapCurvePoints `TONEMAP_MAX_CURVE_POINTS` (0 when unknown).
  */
 data class ManualCapabilities(
     val isoRange: IntRange? = null,
@@ -134,7 +168,11 @@ data class ManualCapabilities(
     val isAeLockSupported: Boolean = false,
     val isAwbLockSupported: Boolean = false,
     val isRawSupported: Boolean = false,
-    val isZslSupported: Boolean = false
+    val isZslSupported: Boolean = false,
+    val isManualPostProcessingSupported: Boolean = false,
+    val isAwbOffSupported: Boolean = false,
+    val isTonemapCurveSupported: Boolean = false,
+    val maxTonemapCurvePoints: Int = 0
 ) {
     /** Manual exposure requires the MANUAL_SENSOR capability and both ranges. */
     val supportsManualExposure: Boolean
@@ -149,14 +187,27 @@ data class ManualCapabilities(
     val supportsManualFocus: Boolean
         get() = minimumFocusDistanceDiopters > 0f
 
-    /** Manual white balance requires at least one non-AUTO preset. */
+    /** Manual white balance requires at least one non-AUTO preset or kelvin support. */
     val supportsManualWhiteBalance: Boolean
-        get() = supportedWhiteBalanceModes.any { it != WhiteBalanceMode.AUTO }
+        get() = supportsWhiteBalanceKelvin ||
+            supportedWhiteBalanceModes.any { it != WhiteBalanceMode.AUTO }
+
+    /**
+     * Kelvin white balance needs AWB off plus manual post-processing so that
+     * `COLOR_CORRECTION_GAINS` are honoured by the HAL.
+     */
+    val supportsWhiteBalanceKelvin: Boolean
+        get() = isManualPostProcessingSupported && isAwbOffSupported
+
+    /** Shadows (Dual Exposure) needs a contrast curve with at least two control points. */
+    val supportsShadowsBoost: Boolean
+        get() = isManualPostProcessingSupported && isTonemapCurveSupported &&
+            maxTonemapCurvePoints >= MIN_TONEMAP_CURVE_POINTS
 
     /** True when the lens exposes at least one manual control. */
     val supportsAnyManualControl: Boolean
         get() = supportsManualExposure || supportsExposureCompensation ||
-            supportsManualFocus || supportsManualWhiteBalance ||
+            supportsManualFocus || supportsManualWhiteBalance || supportsShadowsBoost ||
             isAeLockSupported || isAwbLockSupported
 
     /**
@@ -172,8 +223,13 @@ data class ManualCapabilities(
             ?.takeIf { supportsExposureCompensation }
             ?.coerceIn(exposureCompensationRange!!.first, exposureCompensationRange.last),
         whiteBalance = controls.whiteBalance?.takeIf { it in supportedWhiteBalanceModes },
+        whiteBalanceKelvin = controls.whiteBalanceKelvin?.takeIf { supportsWhiteBalanceKelvin }
+            ?.coerceIn(ManualControls.WHITE_BALANCE_KELVIN_RANGE),
         focusDistanceDiopters = controls.focusDistanceDiopters?.takeIf { supportsManualFocus }
             ?.coerceIn(0f, minimumFocusDistanceDiopters),
+        shadowsBoost = controls.shadowsBoost?.takeIf { supportsShadowsBoost }
+            ?.coerceIn(ManualControls.SHADOWS_RANGE)
+            ?.takeIf { it != 0f },
         aeLock = controls.aeLock && isAeLockSupported,
         awbLock = controls.awbLock && isAwbLockSupported
     )
@@ -181,6 +237,9 @@ data class ManualCapabilities(
     companion object {
         /** No manual control at all (e.g. legacy HAL or external camera). */
         val NONE = ManualCapabilities()
+
+        /** Smallest tone curve we are willing to build (start and end point). */
+        const val MIN_TONEMAP_CURVE_POINTS: Int = 2
     }
 }
 

@@ -16,6 +16,7 @@
 package com.google.jetpackcamera.ui.controller.quicksettings
 
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
@@ -72,4 +73,11 @@ interface QuickSettingsController {
      * @param captureMode The capture mode to set.
      */
     fun setCaptureMode(captureMode: CaptureMode)
+
+    /**
+     * Sets the CameraX extension mode (Night, Portrait/Bokeh, HDR, Face Retouch or off).
+     *
+     * @param extensionMode The extension mode to activate; [CameraExtensionMode.NONE] disables it.
+     */
+    fun setExtensionMode(extensionMode: CameraExtensionMode)
 }

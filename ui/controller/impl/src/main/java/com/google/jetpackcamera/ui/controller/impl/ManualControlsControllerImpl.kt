@@ -73,8 +73,24 @@ class ManualControlsControllerImpl(
     override fun setExposureCompensationIndex(index: Int?) =
         update { it.copy(exposureCompensationIndex = index?.takeIf { v -> v != 0 }) }
 
-    override fun setWhiteBalance(mode: WhiteBalanceMode?) =
-        update { it.copy(whiteBalance = mode?.takeIf { m -> m != WhiteBalanceMode.AUTO }) }
+    override fun setWhiteBalance(mode: WhiteBalanceMode?) = update {
+        it.copy(
+            whiteBalance = mode?.takeIf { m -> m != WhiteBalanceMode.AUTO },
+            whiteBalanceKelvin = null
+        )
+    }
+
+    override fun setWhiteBalanceKelvin(kelvin: Int?) = update {
+        it.copy(
+            whiteBalanceKelvin = kelvin?.coerceIn(ManualControls.WHITE_BALANCE_KELVIN_RANGE)
+        )
+    }
+
+    override fun setShadowsBoost(shadows: Float?) = update {
+        it.copy(
+            shadowsBoost = shadows?.coerceIn(ManualControls.SHADOWS_RANGE)?.takeIf { s -> s != 0f }
+        )
+    }
 
     override fun setFocusDistance(diopters: Float?) =
         update { it.copy(focusDistanceDiopters = diopters) }

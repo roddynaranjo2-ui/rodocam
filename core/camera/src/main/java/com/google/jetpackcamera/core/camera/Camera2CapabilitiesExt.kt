@@ -57,6 +57,8 @@ val CameraInfo.manualCapabilities: ManualCapabilities
         val isManualSensorSupported =
             CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR in capabilities
         val isRawSupported = CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_RAW in capabilities
+        val isManualPostProcessingSupported =
+            CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING in capabilities
 
         val isoRange = camera2Info
             .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
@@ -82,12 +84,21 @@ val CameraInfo.manualCapabilities: ManualCapabilities
         val manualFocusDistance =
             if (CameraMetadata.CONTROL_AF_MODE_OFF in afModes) minimumFocusDistance else 0f
 
-        val awbModes = camera2Info
+        val rawAwbModes = camera2Info
             .getCameraCharacteristic(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES)
-            ?.mapNotNull { it.toWhiteBalanceMode() }
-            ?.toSet()
-            ?.ifEmpty { setOf(WhiteBalanceMode.AUTO) }
-            ?: setOf(WhiteBalanceMode.AUTO)
+            ?.toSet() ?: emptySet()
+        val awbModes = rawAwbModes
+            .mapNotNull { it.toWhiteBalanceMode() }
+            .toSet()
+            .ifEmpty { setOf(WhiteBalanceMode.AUTO) }
+        val isAwbOffSupported = CameraMetadata.CONTROL_AWB_MODE_OFF in rawAwbModes
+
+        val tonemapModes = camera2Info
+            .getCameraCharacteristic(CameraCharacteristics.TONEMAP_AVAILABLE_TONE_MAP_MODES)
+            ?.toSet() ?: emptySet()
+        val isTonemapCurveSupported = CameraMetadata.TONEMAP_MODE_CONTRAST_CURVE in tonemapModes
+        val maxTonemapCurvePoints = camera2Info
+            .getCameraCharacteristic(CameraCharacteristics.TONEMAP_MAX_CURVE_POINTS) ?: 0
 
         val isAeLockSupported = camera2Info
             .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) ?: false
@@ -111,7 +122,11 @@ val CameraInfo.manualCapabilities: ManualCapabilities
             isAeLockSupported = isAeLockSupported,
             isAwbLockSupported = isAwbLockSupported,
             isRawSupported = isRawSupported,
-            isZslSupported = isZslSupported
+            isZslSupported = isZslSupported,
+            isManualPostProcessingSupported = isManualPostProcessingSupported,
+            isAwbOffSupported = isAwbOffSupported,
+            isTonemapCurveSupported = isTonemapCurveSupported,
+            maxTonemapCurvePoints = maxTonemapCurvePoints
         )
     }
 

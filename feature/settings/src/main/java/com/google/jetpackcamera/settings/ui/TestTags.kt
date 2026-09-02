@@ -122,6 +122,10 @@ const val BTN_DIALOG_VIDEO_QUALITY_OPTION_HD_TAG = "btn_dialog_video_quality_opt
 const val BTN_DIALOG_VIDEO_QUALITY_OPTION_FHD_TAG = "btn_dialog_video_quality_option_fhd_tag"
 const val BTN_DIALOG_VIDEO_QUALITY_OPTION_UHD_TAG = "btn_dialog_video_quality_option_uhd_tag"
 
+// Image format
+const val BTN_OPEN_DIALOG_SETTING_IMAGE_FORMAT_TAG = "btn_open_dialog_setting_image_format_tag"
+const val BTN_DIALOG_IMAGE_FORMAT_OPTION_PREFIX = "btn_dialog_image_format_option_"
+
 // Dark Mode
 const val BTN_OPEN_DIALOG_SETTING_DARK_MODE_TAG = "btn_open_dialog_setting_dark_mode_tag"
 const val BTN_DIALOG_DARK_MODE_OPTION_ON_TAG = "btn_dialog_dark_mode_option_on_tag"
