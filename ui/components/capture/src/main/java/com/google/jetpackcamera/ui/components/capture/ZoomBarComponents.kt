@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -155,14 +156,24 @@ private fun ZoomButton(
             }
         }
     }
+    val zoomButtonDescription = stringResource(
+        R.string.zoom_button_content_description,
+        formatter.format(targetZoom)
+    )
+    val selectedDescription = stringResource(R.string.zoom_button_state_selected)
+    val notSelectedDescription = stringResource(R.string.zoom_button_state_not_selected)
     ToggleButton(
         checked = isSelected,
         onCheckedChange = { onChangeZoom(targetZoom) },
         modifier = modifier.heightIn(buttonSize)
             .semantics {
                 testTag = getZoomButtonTestTag(targetZoom)
-                // todo(kc): move to text resource
-                contentDescription = if (isSelected) "selected" else "not selected"
+                contentDescription = zoomButtonDescription
+                stateDescription = if (isSelected) {
+                    selectedDescription
+                } else {
+                    notSelectedDescription
+                }
             },
         shapes = ToggleButtonDefaults.shapesFor(buttonSize),
         contentPadding = ButtonDefaults.contentPaddingFor(buttonSize),
@@ -187,17 +198,20 @@ private fun ZoomButton(
     }
 }
 
-private fun getZoomButtonTestTag(buttonValue: Float): String {
-    return if (buttonValue < 1 && buttonValue > 0) {
-        ZOOM_BUTTON_MIN_TAG
-    } else if (buttonValue == 1f) {
-        ZOOM_BUTTON_1_TAG
-    } else if (buttonValue == 2f) {
-        ZOOM_BUTTON_2_TAG
-    } else if (buttonValue == 5f) {
-        ZOOM_BUTTON_5_TAG
-    } else {
-        TODO("Zoom button with value $buttonValue needs a test tag")
+/**
+ * Returns a stable test tag for a zoom button.
+ *
+ * Well-known zoom levels keep their historical tags so existing instrumentation tests keep
+ * working; any other level (e.g. 3x optical on devices with a telephoto lens, 10x, etc.) gets a
+ * deterministic tag derived from its value instead of crashing at runtime.
+ */
+internal fun getZoomButtonTestTag(buttonValue: Float): String {
+    return when {
+        buttonValue < 1f && buttonValue > 0f -> ZOOM_BUTTON_MIN_TAG
+        buttonValue == 1f -> ZOOM_BUTTON_1_TAG
+        buttonValue == 2f -> ZOOM_BUTTON_2_TAG
+        buttonValue == 5f -> ZOOM_BUTTON_5_TAG
+        else -> zoomButtonTestTagFor(buttonValue)
     }
 }
 

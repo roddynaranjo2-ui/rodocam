@@ -406,6 +406,23 @@ Cada fase termina con: build verde en CI, APK instalable en el S21 FE, checklist
 9. **Observabilidad**: `CameraErrorHandler` central + `Timber`; Crashlytics opcional en flavor `stable`.
 10. **QA manual S21 FE**: rotación x20, flip x20, cambiar aspect/HDR/estabilización en bucle, grabar 10 s y comprobar que aparece en galería, revocar audio en background y grabar, tecla volumen para disparar.
 
+### Estado de la Fase 1 (actualizado 2026-09-02, rama `genspark_ai_developer`)
+
+| # | Ítem | Estado | Commits / notas |
+|---|------|--------|-----------------|
+| 1 | 9 `TODO()` de runtime (K-01…K-05) | ✅ Hecho | `ZoomBarComponents`, `TestTags`, `CaptureScreenComponents`, `CaptureButtonComponents`, `CaptureModeUiStateAdapter`, `SettingsComponents` + strings nuevos. |
+| 2 | Ciclo de vida de sesión (C-01, C-02, C-04, C-05, C-06, C-17, U-01) | ✅ Hecho | `CameraControllerImpl` con `Mutex`+`cancelAndJoin` y callback `onCameraError` → snackbar; `CameraXCameraSystem` sin `lateinit`/`!!`, `unbindAll` en `NonCancellable + Main.immediate`; `CoroutineLifecycleOwner` siempre en main thread; estabilización `AUTO` degrada a `OFF`. `InitState` flow y debounce quedan para Fase 2 (no bloqueantes). |
+| 3 | Errores de captura (C-03, C-08, C-11, U-02, U-03) | ✅ Hecho | `ImageCaptureUnavailableException`/`VideoCaptureUnavailableException`; `StartRecording` sin `VideoCapture` emite `OnVideoRecordError`; `SecurityException` de audio → graba sin audio; `stopVideoRecording` espera al start (`join`) y no lo cancela; `VideoCaptureError` ante cualquier fallo al iniciar. |
+| 4 | Gestos (U-04, U-08, K-07) | ✅ Hecho | Lambda `tapToFocus` memorizada; `ZoomStateManager.onZoomRangeChanged`; `PreviewDisplay` con `rememberUpdatedState`, `pointerInput(Unit)`, deltas de pinch no-op filtrados. Doble-tap 1x↔2x → Fase 3 (UX Pixel). |
+| 5 | Permisos de galería (U-05) | ✅ Hecho | `getLastCapturedMedia` en IO y tolerante a `SecurityException` (API ≤ 28 sin permiso). |
+| 6 | Manifest/Play (A-01, A-03, A-04, A-05, B-04) | ✅ Hecho | Intent-filters `IMAGE_CAPTURE`/`VIDEO_CAPTURE`/`STILL_IMAGE_CAMERA(_SECURE)`/`VIDEO_CAMERA`; `targetSdk 36`; `signingConfigs.release` desde `RODOCAM_*` o `keystore.properties`; `proguard-rules.pro`; `versionCode` desde `GITHUB_RUN_NUMBER`. A-02 (orientación en tablets) → Fase 3. |
+| 7 | Build (B-01, B-02) | ✅ Hecho | `installGitHooks` `onlyIf !CI` sin `taskGraph.whenReady`; `-Xmx4g`. B-03 (kapt→KSP) → Fase 2, requiere validar con CI verde primero. |
+| 8 | Limpieza (A-03, A-04, C-07, C-12, C-16, U-06) | ✅ Hecho | `Camera.ACTION_NEW_PICTURE` eliminado; helpers cropRect corregidos + `CropRectDimensionsTest`; `ImageOutputFormat.mimeType/fileExtension`; `DebugUiState` reactivo. |
+| 9 | Observabilidad (`CameraErrorHandler`, Timber) | ⏳ Pendiente | Se hará junto con Fase 2 cuando existan más fuentes de error. |
+| 10 | QA manual S21 FE | ⏳ Pendiente | Requiere el APK de CI (`.github/workflows/build-apk.yml` debe sustituirse por `docs/ci/build-apk.proposed.yml`). |
+
+> Verificación: en el sandbox no hay Android SDK, por lo que la validación ha sido estática (imports, tipos, llamadas cruzadas). El primer build real lo hará GitHub Actions al abrir/actualizar el PR.
+
 ## Fase 2 — Control profesional y multi-cámara real (2–4 semanas)
 
 **Objetivo:** modo **Pro** de Pixel 10 (ISO, shutter, WB, focus, EV, dual exposure) + selección de lente física + RAW/HEIC + ZSL.

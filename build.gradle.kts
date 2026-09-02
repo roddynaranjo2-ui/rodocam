@@ -24,21 +24,28 @@ plugins {
         alias(libs.plugins.compose.compiler) apply false
 }
 
+// Installs the pre-commit hook for local development. It is skipped on CI (no `.git/hooks`
+// needs to be written there) and is no longer forced onto every task via `taskGraph.whenReady`,
+// which was incompatible with the configuration cache and slowed down every build.
+// Run manually with `./gradlew installGitHooks` or rely on the wiring below (`prepareKotlinBuildScriptModel`
+// is what Android Studio / IDE sync triggers).
+val gitHooksDir = rootProject.rootDir.resolve(".git/hooks")
+val isCi = System.getenv("CI") != null
+
 tasks.register<Copy>("installGitHooks") {
-    println("Installing git hooks")
+    description = "Copies hooks/pre-commit into .git/hooks (local development only)."
+    group = "build setup"
+    onlyIf { !isCi && gitHooksDir.parentFile.isDirectory }
     from(rootProject.rootDir.resolve("hooks/pre-commit"))
-    into(rootProject.rootDir.resolve(".git/hooks"))
+    into(gitHooksDir)
     filePermissions {
         unix("0775")
     }
 }
 
-gradle.taskGraph.whenReady {
-    allTasks.forEach { task ->
-        if (task != tasks["installGitHooks"]) {
-            task.dependsOn(tasks["installGitHooks"])
-        }
-    }
+// Hook the installation into IDE sync only, instead of every task in the graph.
+tasks.matching { it.name == "prepareKotlinBuildScriptModel" }.configureEach {
+    dependsOn("installGitHooks")
 }
 
 // Task to print all the module paths in the project e.g. :core:data

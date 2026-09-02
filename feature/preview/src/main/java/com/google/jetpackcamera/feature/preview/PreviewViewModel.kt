@@ -120,7 +120,9 @@ class PreviewViewModel @Inject constructor(
 
     private val debugSettings: DebugSettings = savedStateHandle.getDebugSettings()
 
-    private var cameraPropertiesJSON = ""
+    // Populated asynchronously once the camera system finishes initializing; exposed as a flow so
+    // the debug overlay updates instead of capturing the initial empty string forever.
+    private val cameraPropertiesJSON = MutableStateFlow("")
 
     val screenFlashController: ScreenFlashController = ScreenFlashControllerImpl(
         cameraSystem = cameraSystemRepository.cameraSystem,
@@ -135,7 +137,7 @@ class PreviewViewModel @Inject constructor(
             cameraAppSettings = settingsRepository.defaultCameraAppSettings.first()
                 .applyExternalCaptureMode(externalCaptureMode)
                 .copy(debugSettings = debugSettings)
-        ) { cameraPropertiesJSON = it }
+        ) { cameraPropertiesJSON.value = it }
     }
 
     val captureUiState: StateFlow<CaptureUiState> = captureUiState(
@@ -153,7 +155,7 @@ class PreviewViewModel @Inject constructor(
         cameraSystemRepository.cameraSystem,
         constraintsRepository,
         debugSettings,
-        cameraPropertiesJSON,
+        cameraPropertiesJSON.asStateFlow(),
         trackedCaptureUiState
     )
         .stateIn(
@@ -211,7 +213,18 @@ class PreviewViewModel @Inject constructor(
         initializationDeferred = initializationDeferred,
         captureUiState = captureUiState,
         coroutineContext = viewModelScope.coroutineContext,
-        cameraSystem = cameraSystemRepository.cameraSystem
+        cameraSystem = cameraSystemRepository.cameraSystem,
+        onCameraError = { throwable ->
+            Log.e(TAG, "Camera session error", throwable)
+            val cookieInt = snackBarController.incrementAndGetSnackBarCount()
+            snackBarController.addSnackBarData(
+                SnackbarData(
+                    cookie = "CameraError-$cookieInt",
+                    stringResource = R.string.camera_session_error_toast_message,
+                    withDismissAction = true
+                )
+            )
+        }
     )
 
     val captureController: CaptureController = CaptureControllerImpl(

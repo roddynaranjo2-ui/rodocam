@@ -125,19 +125,25 @@ class LocalMediaRepository(
      *
      * @return The [MediaDescriptor] of the last captured media, or [MediaDescriptor.None] if no media is found.
      */
-    override suspend fun getLastCapturedMedia(): MediaDescriptor {
-        val imagePair =
+    override suspend fun getLastCapturedMedia(): MediaDescriptor = withContext(iODispatcher) {
+        // On API 29+ (scoped storage) this query returns the media owned by this app without any
+        // storage permission, which is all the image well needs. On API <= 28 the query requires
+        // READ_EXTERNAL_STORAGE; if it hasn't been granted the resolver throws SecurityException,
+        // which must not crash the camera.
+        val imagePair = runCatching {
             getLastSavedMediaUriWithDate(
                 context.contentResolver,
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             )
-        val videoPair =
+        }.onFailure { Log.w(TAG, "Unable to query last captured image", it) }.getOrNull()
+        val videoPair = runCatching {
             getLastSavedMediaUriWithDate(
                 context.contentResolver,
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             )
+        }.onFailure { Log.w(TAG, "Unable to query last captured video", it) }.getOrNull()
 
-        return if (imagePair != null && videoPair != null) {
+        if (imagePair != null && videoPair != null) {
             // Case 1: BOTH exist. Compare dates.
             if (imagePair.second >= videoPair.second) {
                 getImageMediaDescriptor(imagePair.first)

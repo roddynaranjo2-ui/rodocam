@@ -44,6 +44,19 @@ const val ZOOM_BUTTON_1_TAG = "ZoomButton1Tag"
 const val ZOOM_BUTTON_2_TAG = "ZoomButton2Tag"
 const val ZOOM_BUTTON_5_TAG = "ZoomButton5Tag"
 
+/**
+ * Builds a deterministic test tag for zoom levels that don't have a dedicated constant
+ * (e.g. 3x optical telephoto, 10x). `3.0f` -> "ZoomButton3Tag", `0.6f` -> "ZoomButton0_6Tag".
+ */
+fun zoomButtonTestTagFor(zoomRatio: Float): String {
+    val normalized = if (zoomRatio == zoomRatio.toInt().toFloat()) {
+        zoomRatio.toInt().toString()
+    } else {
+        zoomRatio.toString().replace('.', '_')
+    }
+    return "ZoomButton${normalized}Tag"
+}
+
 // debug component tags
 
 const val ELAPSED_TIME_TAG = "ElapsedTimeTag"

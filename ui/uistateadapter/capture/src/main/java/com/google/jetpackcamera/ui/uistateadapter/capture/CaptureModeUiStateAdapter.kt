@@ -300,7 +300,9 @@ private fun getCaptureModeDisabledReason(
                 return DisabledReason.HDR_IMAGE_UNSUPPORTED_ON_DEVICE
             }
 
-            throw RuntimeException("Unknown DisabledReason for capture mode.")
+            // Caller believes IMAGE_ONLY is unsupported but no rule above matched: degrade to the
+            // most general reason instead of crashing the viewfinder.
+            return DisabledReason.HDR_IMAGE_UNSUPPORTED_ON_DEVICE
         }
 
         CaptureMode.VIDEO_ONLY -> {
@@ -318,11 +320,43 @@ private fun getCaptureModeDisabledReason(
                 return DisabledReason.HDR_VIDEO_UNSUPPORTED_ON_DEVICE
             }
 
-            throw RuntimeException("Unknown DisabledReason for video mode.")
+            return DisabledReason.HDR_VIDEO_UNSUPPORTED_ON_DEVICE
         }
 
         CaptureMode.STANDARD -> {
-            TODO()
+            // STANDARD (simultaneous image + video) is unsupported whenever either of its halves
+            // is unsupported. Reuse the specific reason so the user gets an actionable message.
+            if (!hdrImageFormatSupported ||
+                externalCaptureMode == ExternalCaptureMode.VideoCapture ||
+                concurrentCameraMode == ConcurrentCameraMode.DUAL
+            ) {
+                return getCaptureModeDisabledReason(
+                    disabledCaptureMode = CaptureMode.IMAGE_ONLY,
+                    hdrDynamicRangeSupported = hdrDynamicRangeSupported,
+                    hdrImageFormatSupported = hdrImageFormatSupported,
+                    systemConstraints = systemConstraints,
+                    currentLensFacing = currentLensFacing,
+                    affectsImageCapture = affectsImageCapture,
+                    concurrentCameraMode = concurrentCameraMode,
+                    externalCaptureMode = externalCaptureMode
+                )
+            }
+            if (!hdrDynamicRangeSupported ||
+                externalCaptureMode == ExternalCaptureMode.ImageCapture ||
+                externalCaptureMode == ExternalCaptureMode.MultipleImageCapture
+            ) {
+                return getCaptureModeDisabledReason(
+                    disabledCaptureMode = CaptureMode.VIDEO_ONLY,
+                    hdrDynamicRangeSupported = hdrDynamicRangeSupported,
+                    hdrImageFormatSupported = hdrImageFormatSupported,
+                    systemConstraints = systemConstraints,
+                    currentLensFacing = currentLensFacing,
+                    affectsImageCapture = affectsImageCapture,
+                    concurrentCameraMode = concurrentCameraMode,
+                    externalCaptureMode = externalCaptureMode
+                )
+            }
+            return DisabledReason.HDR_SIMULTANEOUS_IMAGE_VIDEO_UNSUPPORTED
         }
     }
 }

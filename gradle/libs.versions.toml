@@ -5,7 +5,7 @@ compileSdkMinor = "1"
 desugar_jdk_libs = "2.1.5"
 orchestrator = "1.6.1"
 minSdk = "24"
-targetSdk = "35"
+targetSdk = "36"
 
 # Used below in dependency definitions
 # Compose and Accompanist versions are linked

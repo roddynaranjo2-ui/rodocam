@@ -321,7 +321,9 @@ fun AspectRatioSetting(
                 )
             }
         } else {
-            TODO("aspect ratio currently has no disabled criteria")
+            // AspectRatioUiState currently only has an Enabled variant; keep a safe fallback so a
+            // future Disabled state never crashes the settings screen.
+            stringResource(id = R.string.setting_unavailable_description)
         },
         enabled = true,
         popupContents = {
@@ -433,7 +435,10 @@ fun LowLightBoostPrioritySetting(
                 )
             }
         } else {
-            TODO("low light boost priority currently has no disabled criteria")
+            disabledRationaleString(
+                (lowLightBoostPriorityUiState as LowLightBoostPriorityUiState.Disabled)
+                    .disabledRationale
+            )
         },
         popupContents = {
             Column(Modifier.selectableGroup()) {
@@ -533,7 +538,8 @@ private fun getTargetFpsTestTag(fpsOption: Int): String = when (fpsOption) {
     TARGET_FPS_30 -> BTN_DIALOG_FPS_OPTION_30_TAG
     TARGET_FPS_60 -> BTN_DIALOG_FPS_OPTION_60_TAG
     TARGET_FPS_AUTO -> BTN_DIALOG_FPS_OPTION_AUTO_TAG
-    else -> TODO("Unhandled FPS option for test tag: $fpsOption")
+    // Deterministic tag for any additional frame rate (e.g. 24, 120) exposed in the future.
+    else -> "btn_dialog_fps_option_${fpsOption}_tag"
 }
 
 @Composable
@@ -553,7 +559,7 @@ fun TargetFpsSetting(
                 TARGET_FPS_30 -> stringResource(id = R.string.fps_description, TARGET_FPS_30)
                 TARGET_FPS_60 -> stringResource(id = R.string.fps_description, TARGET_FPS_60)
                 TARGET_FPS_AUTO -> stringResource(id = R.string.fps_description_auto)
-                else -> TODO("Unhandled Target FPS")
+                else -> stringResource(id = R.string.fps_description, fpsUiState.currentSelection)
             }
         } else {
             disabledRationaleString((fpsUiState as FpsUiState.Disabled).disabledRationale)

@@ -542,10 +542,19 @@ fun PreviewDisplay(
     if (aspectRatioUiState !is AspectRatioUiState.Available) {
         return
     }
+    // Keep the latest callbacks without re-creating the gesture state (and therefore dropping an
+    // in-progress pinch) every time the parent recomposes with a new lambda instance.
+    val currentOnScaleZoom by rememberUpdatedState(onScaleZoom)
+    val currentOnTapToFocus by rememberUpdatedState(onTapToFocus)
+    val currentOnFlipCamera by rememberUpdatedState(onFlipCamera)
+
     @Suppress("DEPRECATION")
     val transformableState = rememberTransformableState(
         onTransformation = { pinchZoomChange, _, _ ->
-            onScaleZoom(pinchZoomChange)
+            // Ignore no-op deltas so a plain tap/drag doesn't spam the zoom pipeline.
+            if (pinchZoomChange != 1f) {
+                currentOnScaleZoom(pinchZoomChange)
+            }
         }
     )
 
@@ -603,8 +612,11 @@ fun PreviewDisplay(
                     .alpha(imageAlpha)
                     .clip(RoundedCornerShape(16.dp))
             ) {
+                // SurfaceView (EXTERNAL) is more efficient, but before API 25 it does not
+                // support the transforms/clipping the viewfinder relies on.
                 val implementationMode = when {
-                    Build.VERSION.SDK_INT > 24 -> ImplementationMode.EXTERNAL
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1 ->
+                        ImplementationMode.EXTERNAL
                     else -> ImplementationMode.EMBEDDED
                 }
 
@@ -618,22 +630,22 @@ fun PreviewDisplay(
                 CameraXViewfinder(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(onFlipCamera) {
+                        .pointerInput(Unit) {
                             detectTapGestures(
                                 onDoubleTap = { offset ->
                                     // double tap to flip camera
                                     Log.d(TAG, "onDoubleTap $offset")
-                                    onFlipCamera()
+                                    currentOnFlipCamera()
                                 },
                                 onTap = {
                                     with(coordinateTransformer) {
                                         val surfaceCoords = it.transform()
                                         Log.d(
-                                            "TAG",
+                                            TAG,
                                             "onTapToFocus: " +
                                                 "input{$it} -> surface{$surfaceCoords}"
                                         )
-                                        onTapToFocus(surfaceCoords.x, surfaceCoords.y)
+                                        currentOnTapToFocus(surfaceCoords.x, surfaceCoords.y)
                                     }
                                 }
                             )
@@ -736,45 +748,33 @@ fun StabilizationIcon(stabilizationUiState: StabilizationUiState, modifier: Modi
                 Icon(
                     modifier = modifier.size(IconButtonDefaults.smallIconSize),
 
+                    // Never throw from a composable: unknown/unsupported combinations degrade to
+                    // a generic stabilization glyph instead of crashing the viewfinder.
                     painter = when (stabilizationUiState) {
                         is StabilizationUiState.Specific ->
                             when (stabilizationUiState.stabilizationMode) {
-                                StabilizationMode.AUTO ->
-                                    throw IllegalStateException(
-                                        "AUTO is not a specific StabilizationUiState."
-                                    )
-
                                 StabilizationMode.HIGH_QUALITY ->
                                     painterResource(R.drawable.video_stable_hq_filled_icon)
 
                                 StabilizationMode.OPTICAL ->
                                     painterResource(R.drawable.video_stable_ois_filled_icon)
 
-                                StabilizationMode.ON ->
+                                StabilizationMode.ON,
+                                StabilizationMode.AUTO,
+                                StabilizationMode.OFF ->
                                     painterResource(R.drawable.ic_video_stable)
-
-                                else ->
-                                    TODO(
-                                        "Cannot retrieve icon for unimplemented " +
-                                            "stabilization mode:" +
-                                            "${stabilizationUiState.stabilizationMode}"
-                                    )
                             }
 
                         is StabilizationUiState.Auto -> {
                             when (stabilizationUiState.stabilizationMode) {
-                                StabilizationMode.ON ->
-                                    painterResource(R.drawable.video_stable_auto_filled_icon)
-
                                 StabilizationMode.OPTICAL ->
                                     painterResource(R.drawable.video_stable_ois_auto_filled_icon)
 
-                                else ->
-                                    TODO(
-                                        "Auto stabilization not yet implemented for " +
-                                            "${stabilizationUiState.stabilizationMode}, " +
-                                            "unable to retrieve icon."
-                                    )
+                                StabilizationMode.ON,
+                                StabilizationMode.HIGH_QUALITY,
+                                StabilizationMode.AUTO,
+                                StabilizationMode.OFF ->
+                                    painterResource(R.drawable.video_stable_auto_filled_icon)
                             }
                         }
                     },

@@ -37,6 +37,9 @@
     <string name="microphone_on">Microphone On</string>
 
     <string name="zoom_ratio_text">%1$.2fx</string>
+    <string name="zoom_button_content_description">Zoom %1$s</string>
+    <string name="zoom_button_state_selected">Selected</string>
+    <string name="zoom_button_state_not_selected">Not selected</string>
 
 
     <!-- Stabilization -->
@@ -91,6 +94,7 @@
     <string name="quick_settings_flash_llb_description">Low Light Boost on</string>
 
     <string name="low_light_boost_error_toast_message">An error occurred when running low light boost.</string>
+    <string name="camera_session_error_toast_message">The camera could not be started. Please try again.</string>
     <!-- Capture Mode Text -->
     <string name="quick_settings_text_capture_mode_standard">Hybrid Capture</string>
     <string name="quick_settings_text_capture_mode_video_only">Video Only</string>

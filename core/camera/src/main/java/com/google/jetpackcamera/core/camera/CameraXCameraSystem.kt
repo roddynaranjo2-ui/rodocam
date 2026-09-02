@@ -81,6 +81,8 @@ import java.io.File
 import java.io.FileNotFoundException
 import javax.inject.Provider
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,11 +115,22 @@ class CameraXCameraSystem(
     private val cameraEffectProviders:
     Map<CameraEffectFeatureKey, @JvmSuppressWildcards Provider<CameraEffectProvider>>
 ) : CameraSystem {
-    private lateinit var cameraProvider: ProcessCameraProvider
+    /**
+     * Set once [initialize] succeeds. Kept nullable (instead of `lateinit`) so that any public
+     * method invoked before/without a successful initialization fails gracefully instead of
+     * throwing [UninitializedPropertyAccessException].
+     */
+    @Volatile
+    private var cameraProvider: ProcessCameraProvider? = null
 
     private var imageCaptureUseCase: ImageCapture? = null
 
-    private lateinit var systemConstraints: CameraSystemConstraints
+    /**
+     * Constraints discovered during [initialize]. Defaults to an empty set of constraints so all
+     * lookups (`perLensConstraints[...]`) safely resolve to `null` before initialization.
+     */
+    @Volatile
+    private var systemConstraints: CameraSystemConstraints = CameraSystemConstraints()
 
     private val screenFlashEvents: Channel<CameraSystem.ScreenFlashEvent> =
         Channel(capacity = Channel.UNLIMITED)
@@ -163,10 +176,11 @@ class CameraXCameraSystem(
         cameraPropertiesJSONCallback: (result: String) -> Unit
     ) {
         val debugSettings = cameraAppSettings.debugSettings
-        cameraProvider = configureAndGetCameraProvider(
+        val cameraProvider = configureAndGetCameraProvider(
             context = application,
             singleLensMode = debugSettings.singleLensMode
         )
+        this.cameraProvider = cameraProvider
 
         // updates values for available cameras
         val availableCameraLenses =
@@ -396,6 +410,10 @@ class CameraXCameraSystem(
     override suspend fun runCamera() = coroutineScope {
         Log.d(TAG, "runCamera")
 
+        val cameraProvider = checkNotNull(cameraProvider) {
+            "CameraXCameraSystem.runCamera() called before initialize() completed successfully."
+        }
+
         launch {
             handleLowLightBoostErrors()
         }
@@ -475,6 +493,14 @@ class CameraXCameraSystem(
             }.distinctUntilChanged()
             .collectLatest { sessionSettings ->
                 coroutineScope {
+                    // Snapshot the settings that produced this session. They are guaranteed
+                    // non-null here because the upstream flow is `filterNotNull()`.
+                    val sessionAppSettings = currentSettings.value
+                    if (sessionAppSettings == null) {
+                        Log.w(TAG, "Settings became null before session start; skipping session")
+                        return@coroutineScope
+                    }
+                    val lensConstraints = systemConstraints.forCurrentLens(sessionAppSettings)
                     with(
                         CameraSessionContext(
                             context = application,
@@ -495,7 +521,7 @@ class CameraXCameraSystem(
                             when (sessionSettings) {
                                 is PerpetualSessionSettings.SingleCamera -> runSingleCameraSession(
                                     sessionSettings,
-                                    systemConstraints.forCurrentLens(currentSettings.value!!),
+                                    lensConstraints,
                                     onImageCaptureCreated = { imageCapture ->
                                         imageCaptureUseCase = imageCapture
                                     }
@@ -504,14 +530,19 @@ class CameraXCameraSystem(
                                 is PerpetualSessionSettings.ConcurrentCamera ->
                                     runConcurrentCameraSession(
                                         sessionSettings,
-                                        systemConstraints.forCurrentLens(currentSettings.value!!)
+                                        lensConstraints
                                     )
                             }
                         } finally {
-                            // TODO(tm): This shouldn't be necessary. Cancellation of the
-                            //  coroutineScope by collectLatest should cause this to
-                            //  occur naturally.
-                            cameraProvider.unbindAll()
+                            // The ImageCapture instance belongs to the session that is being torn
+                            // down. Clear it so takePicture() reports a recoverable error instead
+                            // of capturing on an unbound use case.
+                            imageCaptureUseCase = null
+                            // Use cases must be unbound from the main thread, and the cleanup must
+                            // run to completion even though this coroutine is being cancelled.
+                            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                                cameraProvider.unbindAll()
+                            }
                         }
                     }
                 }
@@ -551,11 +582,10 @@ class CameraXCameraSystem(
     }
 
     override suspend fun takePicture(onCaptureStarted: (() -> Unit)) {
-        if (imageCaptureUseCase == null) {
-            throw RuntimeException("Attempted take picture with null imageCapture use case")
-        }
+        val imageCapture = imageCaptureUseCase
+            ?: throw ImageCaptureUnavailableException()
         try {
-            val imageProxy = imageCaptureUseCase!!.takePicture(onCaptureStarted)
+            val imageProxy = imageCapture.takePicture(onCaptureStarted)
             Log.d(TAG, "onCaptureSuccess")
             imageProxy.close()
         } catch (exception: Exception) {
@@ -572,10 +602,13 @@ class CameraXCameraSystem(
     ): ImageCapture.OutputFileResults = imageCaptureUseCase?.let { imageCaptureUseCase ->
         val (outputFileOptions, closeable) = when (saveLocation) {
             is SaveLocation.Default -> {
-                val filename = filePathGenerator.generateImageFilename()
+                val imageFormat = currentSettings.value?.imageFormat ?: ImageOutputFormat.JPEG
+                val filename = filePathGenerator.generateImageFilename(
+                    fileExtension = imageFormat.fileExtension
+                )
                 val contentValues = ContentValues()
                 contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                contentValues.put(MediaStore.MediaColumns.MIME_TYPE, imageFormat.mimeType)
                 val relativePath = filePathGenerator.relativeImageOutputPath
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+
                     contentValues.put(
@@ -632,15 +665,20 @@ class CameraXCameraSystem(
         } finally {
             closeable?.close()
         }.also { outputFileResults ->
-            outputFileResults.savedUri?.let {
-                for ((key, value) in imagePostProcessors) {
-                    value.get().postProcessImage(it)
-                    Log.d(TAG, "Post processed image with $key")
+            outputFileResults.savedUri?.let { savedUri ->
+                // Post-processing (e.g. Ultra HDR gain map handling) can be CPU heavy. Run it on
+                // the background dispatcher so the CameraX capture executor is free to start the
+                // next capture immediately.
+                withContext(defaultDispatcher) {
+                    for ((key, value) in imagePostProcessors) {
+                        value.get().postProcessImage(savedUri)
+                        Log.d(TAG, "Post processed image with $key")
+                    }
                 }
-                Log.d(TAG, "Saved image to $it")
+                Log.d(TAG, "Saved image to $savedUri")
             }
         }
-    } ?: throw RuntimeException("Attempted take picture with null imageCapture use case")
+    } ?: throw ImageCaptureUnavailableException()
 
     override suspend fun startVideoRecording(
         saveLocation: SaveLocation,

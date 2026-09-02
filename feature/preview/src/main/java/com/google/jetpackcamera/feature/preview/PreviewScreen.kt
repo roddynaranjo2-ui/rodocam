@@ -300,6 +300,14 @@ private fun ContentScreen(
         )
     }
 
+    // The zoom range can change independently of the lens (e.g. it is only known once the camera
+    // constraints are loaded, or when switching between single/concurrent modes). Keep the manager
+    // in sync so pinch/slider gestures are never clamped to a stale range.
+    val primaryZoomRange = (zoomUiState.value as? ZoomUiState.Enabled)?.primaryZoomRange
+    LaunchedEffect(primaryZoomRange) {
+        primaryZoomRange?.let { zoomStateManager.onZoomRangeChanged(it) }
+    }
+
     var initialRecordingSettings by remember { mutableStateOf<InitialRecordingSettings?>(null) }
     LaunchedEffect(videoRecordingState.value) {
         with(videoRecordingState.value) {
@@ -396,8 +404,15 @@ private fun ContentScreen(
         }
     }
 
-    val onTapToFocusLambda = cameraController?.let { it::tapToFocus }
-        ?: remember { { _: Float, _: Float -> } }
+    // Bound references (`it::tapToFocus`) create a new object on every recomposition, which
+    // invalidates the `remember` keys below and re-creates the viewfinder lambda each frame.
+    val onTapToFocusLambda: (Float, Float) -> Unit = remember(cameraController) {
+        if (cameraController != null) {
+            { x: Float, y: Float -> cameraController.tapToFocus(x, y) }
+        } else {
+            { _: Float, _: Float -> }
+        }
+    }
     val onScaleZoomLambda = remember {
         { zoomRatio: Float ->
             scope.launch { zoomStateManager.scaleZoom(zoomRatio, LensToZoom.PRIMARY) }

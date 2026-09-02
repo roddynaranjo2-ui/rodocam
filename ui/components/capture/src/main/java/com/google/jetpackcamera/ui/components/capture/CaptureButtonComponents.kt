@@ -103,7 +103,21 @@ private const val LOCK_SWITCH_ALPHA = .37f
 private enum class CaptureSource {
     CAPTURE_BUTTON,
     VOLUME_UP,
-    VOLUME_DOWN
+    VOLUME_DOWN,
+
+    /** Dedicated hardware shutter key or Bluetooth remote shutter ([KeyEvent.KEYCODE_CAMERA]). */
+    CAMERA_KEY
+}
+
+/**
+ * Maps a hardware key code to the [CaptureSource] it should drive, or `null` if the key is not a
+ * capture trigger. Never throws: unknown keys must simply not be handled.
+ */
+private fun keyCodeToCaptureSource(keyCode: Int): CaptureSource? = when (keyCode) {
+    KeyEvent.KEYCODE_VOLUME_UP -> CaptureSource.VOLUME_UP
+    KeyEvent.KEYCODE_VOLUME_DOWN -> CaptureSource.VOLUME_DOWN
+    KeyEvent.KEYCODE_CAMERA -> CaptureSource.CAMERA_KEY
+    else -> null
 }
 
 /**
@@ -118,37 +132,31 @@ private fun CaptureKeyHandler(
     val currentOnPress by rememberUpdatedState(onPress)
     val currentOnRelease by rememberUpdatedState(onRelease)
 
-    fun keyCodeToCaptureSource(keyCode: Int): CaptureSource = when (keyCode) {
-        KeyEvent.KEYCODE_VOLUME_UP -> CaptureSource.VOLUME_UP
-        KeyEvent.KEYCODE_VOLUME_DOWN -> CaptureSource.VOLUME_DOWN
-        else -> TODO("Keycode not assigned to CaptureSource")
-    }
-
     DisposableEffect(view) {
-        // todo call once per keydown
+        // Tracks the key currently held down so auto-repeat ACTION_DOWN events (holding the key)
+        // only trigger a single press, and only the matching ACTION_UP releases it.
         var keyActionDown: Int? = null
         val keyEventDispatcher = ViewCompat.OnUnhandledKeyEventListenerCompat { _, event ->
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                    val captureSource = keyCodeToCaptureSource(event.keyCode)
-                    // pressed down
-                    if (event.action == KeyEvent.ACTION_DOWN && keyActionDown == null) {
+            val captureSource = keyCodeToCaptureSource(event.keyCode)
+                ?: return@OnUnhandledKeyEventListenerCompat false
+
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (keyActionDown == null && event.repeatCount == 0) {
                         keyActionDown = event.keyCode
                         currentOnPress(captureSource)
                     }
-                    // released
-                    if (event.action == KeyEvent.ACTION_UP && keyActionDown == event.keyCode) {
+                }
+
+                KeyEvent.ACTION_UP -> {
+                    if (keyActionDown == event.keyCode) {
                         keyActionDown = null
                         currentOnRelease(captureSource)
                     }
-                    // consume the event
-                    true
-                }
-
-                else -> {
-                    false
                 }
             }
+            // consume the event so volume keys don't change media volume while in the viewfinder
+            true
         }
 
         ViewCompat.addOnUnhandledKeyEventListener(view, keyEventDispatcher)

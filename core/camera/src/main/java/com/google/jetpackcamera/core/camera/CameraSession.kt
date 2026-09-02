@@ -97,6 +97,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -113,6 +114,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val TAG = "CameraSession"
 private val QUALITY_RANGE_MAP = mapOf(
@@ -176,7 +178,12 @@ internal suspend fun runSingleCameraSession(
         }
         .collectLatest { currentTransientSettings ->
             coroutineScope sessionScope@{
-                cameraProvider.unbindAll()
+                // CameraX requires unbind/bind to happen on the main thread. The session scope
+                // is normally Main.immediate already, but we make it explicit so a caller using a
+                // different dispatcher can't accidentally trigger an IllegalStateException.
+                withContext(Dispatchers.Main.immediate) {
+                    cameraProvider.unbindAll()
+                }
                 val currentCameraSelector = currentTransientSettings.primaryLensFacing
                     .toCameraSelector()
                 val cameraInfo = cameraProvider.getCameraInfo(currentCameraSelector)
@@ -649,18 +656,24 @@ private fun getVideoQualityFromResolution(resolution: Size?): VideoQuality =
         }
     } ?: VideoQuality.UNSPECIFIED
 
-private fun getWidthFromCropRect(cropRect: Rect?): Int {
+/**
+ * Width of the crop rect in sensor coordinates (`right - left`), or 0 if unknown.
+ */
+internal fun getWidthFromCropRect(cropRect: Rect?): Int {
     if (cropRect == null) {
         return 0
     }
-    return abs(cropRect.top - cropRect.bottom)
+    return abs(cropRect.right - cropRect.left)
 }
 
-private fun getHeightFromCropRect(cropRect: Rect?): Int {
+/**
+ * Height of the crop rect in sensor coordinates (`bottom - top`), or 0 if unknown.
+ */
+internal fun getHeightFromCropRect(cropRect: Rect?): Int {
     if (cropRect == null) {
         return 0
     }
-    return abs(cropRect.left - cropRect.right)
+    return abs(cropRect.bottom - cropRect.top)
 }
 
 private fun createImageUseCase(
@@ -695,7 +708,8 @@ internal fun createVideoUseCase(
         .setExecutor(backgroundDispatcher.asExecutor())
         .apply {
             videoQuality.toQuality()?.let { quality ->
-                // No fallback strategy is used. The app will crash if the quality is unsupported
+                // If the requested quality is unsupported, fall back to the next lower quality
+                // (or a higher one if there is nothing lower) instead of failing to bind.
                 setQualitySelector(
                     QualitySelector.from(
                         quality,
@@ -759,10 +773,17 @@ private fun createPreviewUseCase(
             setPreviewStabilizationEnabled(false)
         }
         StabilizationMode.HIGH_QUALITY -> {} // No-op. Handled by VideoCapture use case.
-        else -> throw UnsupportedOperationException(
-            "Unexpected stabilization mode: $stabilizationMode. Stabilization mode should always " +
-                "an explicit mode, such as ON, OPTICAL, OFF or HIGH_QUALITY"
-        )
+        StabilizationMode.AUTO -> {
+            // AUTO should have been resolved to an explicit mode before reaching this point.
+            // Rather than crashing the whole camera session, degrade gracefully to OFF.
+            Log.w(
+                TAG,
+                "Unexpected stabilization mode AUTO reached createPreviewUseCase. " +
+                    "Falling back to OFF."
+            )
+            setOpticalStabilizationModeEnabled(false)
+            setPreviewStabilizationEnabled(false)
+        }
     }
 
     setResolutionSelector(
@@ -1028,7 +1049,14 @@ private suspend fun startVideoRecordingInternal(
 
     pendingRecord.apply {
         if (isAudioGranted) {
-            withAudioEnabled(initialMuted = !initialRecordingSettings.isAudioEnabled)
+            try {
+                withAudioEnabled(initialMuted = !initialRecordingSettings.isAudioEnabled)
+            } catch (e: SecurityException) {
+                // The permission can be revoked between the check above and this call
+                // (e.g. via Settings while the app is in the background). Record without audio
+                // instead of crashing.
+                Log.w(TAG, "RECORD_AUDIO permission lost before recording started", e)
+            }
         }
     }
         .asPersistentRecording()
@@ -1247,9 +1275,14 @@ internal suspend fun processVideoControlEvents(
         when (event) {
             is VideoCaptureControlEvent.StartRecordingEvent -> {
                 if (videoCapture == null) {
-                    throw RuntimeException(
-                        "Attempted video recording with null videoCapture"
+                    // The UI asked to record while the session was bound without a VideoCapture
+                    // use case (e.g. IMAGE_ONLY). Surface the error to the caller and keep the
+                    // session alive instead of tearing down the whole camera.
+                    Log.e(TAG, "Attempted video recording with null videoCapture")
+                    event.onVideoRecord(
+                        OnVideoRecordEvent.OnVideoRecordError(VideoCaptureUnavailableException())
                     )
+                    continue
                 }
                 runVideoRecording(
                     videoCapture,
@@ -1363,7 +1396,10 @@ private fun Preview.Builder.updateCameraStateWithCaptureResults(
                     }
                     // Publish stabilization state
                     publishStabilizationMode(result)
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    // Never let an exception escape a Camera2 callback (it would kill the
+                    // camera thread), but don't hide it either.
+                    Log.w(TAG, "Error while processing capture result", e)
                 }
             }
         }

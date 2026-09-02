@@ -28,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
@@ -104,7 +106,13 @@ fun SettingsScreen(
         )
     )
 
-    viewModel.setGrantedPermissions(permissionStates)
+    // Side effect: must not run during composition (it mutates ViewModel state on every
+    // recomposition). `permissionStates` itself is a stable remembered object, so key on the
+    // actual granted/revoked snapshot to re-run only when a permission status changes.
+    val grantedSnapshot = permissionStates.permissions.map { it.status.isGranted }
+    LaunchedEffect(grantedSnapshot) {
+        viewModel.setGrantedPermissions(permissionStates)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -33,6 +33,7 @@ import com.google.jetpackcamera.ui.controller.ImageWellController
 import com.google.jetpackcamera.ui.controller.impl.Utils.nextSaveLocation
 import com.google.jetpackcamera.ui.uistate.capture.TrackedCaptureUiState
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -173,17 +174,28 @@ class CaptureControllerImpl(
                     }
                 }
                 Log.d(TAG, "cameraSystem.startRecording success")
-            } catch (exception: IllegalStateException) {
-                Log.d(TAG, "cameraSystem.startVideoRecording error", exception)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                // Any failure to *request* a recording (illegal state, security, IO while
+                // resolving the save location, ...) must reach the UI, otherwise the capture
+                // button stays stuck in the "recording" state.
+                Log.e(TAG, "cameraSystem.startVideoRecording error", exception)
+                captureEvents.trySend(VideoCaptureEvent.VideoCaptureError(exception))
             }
         }
     }
 
     override fun stopVideoRecording() {
         Log.d(TAG, "stopVideoRecording")
-        recordingJob?.cancel()
+        val startJob = recordingJob
         recordingJob = null
         scope.launch {
+            // Make sure the start request has actually been delivered before we send the stop
+            // request. Cancelling the start job here (previous behaviour) could drop the
+            // StartRecordingEvent while the StopRecordingEvent was still delivered, leaving
+            // the camera system and the UI out of sync.
+            startJob?.join()
             cameraSystem.stopVideoRecording()
         }
     }

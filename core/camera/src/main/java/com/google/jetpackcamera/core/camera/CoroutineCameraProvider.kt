@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.core.camera
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CompositionSettings
@@ -81,14 +83,27 @@ private class CoroutineLifecycleOwner(coroutineContext: CoroutineContext) :
         if (coroutineContext[Job]?.isActive == true) {
             lifecycleRegistry.currentState = Lifecycle.State.RESUMED
             coroutineContext[Job]?.invokeOnCompletion {
-                lifecycleRegistry.apply {
-                    currentState = Lifecycle.State.STARTED
-                    currentState = Lifecycle.State.CREATED
-                    currentState = Lifecycle.State.DESTROYED
+                // invokeOnCompletion may run on whatever thread completed the job. Both
+                // LifecycleRegistry and CameraX's unbind path must run on the main thread, so
+                // hop there if needed instead of throwing IllegalStateException.
+                runOnMainThread {
+                    lifecycleRegistry.apply {
+                        currentState = Lifecycle.State.STARTED
+                        currentState = Lifecycle.State.CREATED
+                        currentState = Lifecycle.State.DESTROYED
+                    }
                 }
             }
         } else {
             lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        }
+    }
+
+    private inline fun runOnMainThread(crossinline block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            block()
+        } else {
+            Handler(Looper.getMainLooper()).post { block() }
         }
     }
 }

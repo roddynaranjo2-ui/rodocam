@@ -65,9 +65,24 @@
             android:theme="@style/Theme.JetpackCamera">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <action android:name="android.media.action.IMAGE_CAPTURE" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- External capture requests (ACTION_IMAGE_CAPTURE / ACTION_VIDEO_CAPTURE) issued by
+                 other apps. Handled in MainActivity.externalCaptureMode. -->
+            <intent-filter>
+                <action android:name="android.media.action.IMAGE_CAPTURE" />
+                <action android:name="android.media.action.VIDEO_CAPTURE" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- "Open the camera app" requests (e.g. lock-screen shortcut, launchers). -->
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA_SECURE" />
+                <action android:name="android.media.action.VIDEO_CAMERA" />
+
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <provider
