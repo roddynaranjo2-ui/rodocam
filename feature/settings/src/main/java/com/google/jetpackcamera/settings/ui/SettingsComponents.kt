@@ -303,51 +303,53 @@ fun AspectRatioSetting(
     setAspectRatio: (AspectRatio) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // AspectRatioUiState currently only has an Enabled variant. Resolve it once so the popup keeps
+    // a typed reference (a `when` on a sealed interface must stay exhaustive if a Disabled state is
+    // ever added, which is exactly what we want).
+    val currentAspectRatio: AspectRatio? = when (aspectRatioUiState) {
+        is AspectRatioUiState.Enabled -> aspectRatioUiState.currentAspectRatio
+    }
     BasicPopupSetting(
         modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_ASPECT_RATIO_TAG),
         title = stringResource(id = R.string.aspect_ratio_title),
         leadingIcon = null,
         description =
-        if (aspectRatioUiState is AspectRatioUiState.Enabled) {
-            when (aspectRatioUiState.currentAspectRatio) {
-                AspectRatio.NINE_SIXTEEN -> stringResource(
-                    id = R.string.aspect_ratio_description_9_16
-                )
+        when (currentAspectRatio) {
+            AspectRatio.NINE_SIXTEEN -> stringResource(
+                id = R.string.aspect_ratio_description_9_16
+            )
 
-                AspectRatio.THREE_FOUR -> stringResource(
-                    id = R.string.aspect_ratio_description_3_4
-                )
+            AspectRatio.THREE_FOUR -> stringResource(
+                id = R.string.aspect_ratio_description_3_4
+            )
 
-                AspectRatio.ONE_ONE -> stringResource(
-                    id = R.string.aspect_ratio_description_1_1
-                )
-            }
-        } else {
-            // AspectRatioUiState currently only has an Enabled variant; keep a safe fallback so a
-            // future Disabled state never crashes the settings screen.
-            stringResource(id = R.string.setting_unavailable_description)
+            AspectRatio.ONE_ONE -> stringResource(
+                id = R.string.aspect_ratio_description_1_1
+            )
+
+            null -> stringResource(id = R.string.setting_unavailable_description)
         },
-        enabled = true,
+        enabled = currentAspectRatio != null,
         popupContents = {
             Column(Modifier.selectableGroup()) {
                 SingleChoiceSelector(
                     modifier = Modifier.testTag(BTN_DIALOG_ASPECT_RATIO_OPTION_9_16_TAG),
                     text = stringResource(id = R.string.aspect_ratio_selector_9_16),
-                    selected = aspectRatioUiState.currentAspectRatio == AspectRatio.NINE_SIXTEEN,
+                    selected = currentAspectRatio == AspectRatio.NINE_SIXTEEN,
                     enabled = true,
                     onClick = { setAspectRatio(AspectRatio.NINE_SIXTEEN) }
                 )
                 SingleChoiceSelector(
                     modifier = Modifier.testTag(BTN_DIALOG_ASPECT_RATIO_OPTION_3_4_TAG),
                     text = stringResource(id = R.string.aspect_ratio_selector_3_4),
-                    selected = aspectRatioUiState.currentAspectRatio == AspectRatio.THREE_FOUR,
+                    selected = currentAspectRatio == AspectRatio.THREE_FOUR,
                     enabled = true,
                     onClick = { setAspectRatio(AspectRatio.THREE_FOUR) }
                 )
                 SingleChoiceSelector(
                     modifier = Modifier.testTag(BTN_DIALOG_ASPECT_RATIO_OPTION_1_1_TAG),
                     text = stringResource(id = R.string.aspect_ratio_selector_1_1),
-                    selected = aspectRatioUiState.currentAspectRatio == AspectRatio.ONE_ONE,
+                    selected = currentAspectRatio == AspectRatio.ONE_ONE,
                     enabled = true,
                     onClick = { setAspectRatio(AspectRatio.ONE_ONE) }
                 )
@@ -420,15 +422,21 @@ fun LowLightBoostPrioritySetting(
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentPriority: LowLightBoostPriority? = when (lowLightBoostPriorityUiState) {
+        is LowLightBoostPriorityUiState.Enabled ->
+            lowLightBoostPriorityUiState.currentLowLightBoostPriority
+
+        is LowLightBoostPriorityUiState.Disabled -> null
+    }
     BasicPopupSetting(
         modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_LOW_LIGHT_BOOST_PRIORITY_TAG),
         title = stringResource(R.string.low_light_boost_priority_title),
         leadingIcon = null,
-        enabled = true,
+        enabled = currentPriority != null,
         description =
-        if (lowLightBoostPriorityUiState is LowLightBoostPriorityUiState.Enabled) {
-            when (lowLightBoostPriorityUiState.currentLowLightBoostPriority) {
-                LowLightBoostPriority.PRIORITIZE_AE_MODE -> stringResource(
+        when (lowLightBoostPriorityUiState) {
+            is LowLightBoostPriorityUiState.Enabled -> when (currentPriority) {
+                LowLightBoostPriority.PRIORITIZE_AE_MODE, null -> stringResource(
                     id = R.string.low_light_boost_priority_description_ae_mode
                 )
 
@@ -436,10 +444,9 @@ fun LowLightBoostPrioritySetting(
                     id = R.string.low_light_boost_priority_description_camera_effect
                 )
             }
-        } else {
-            disabledRationaleString(
-                (lowLightBoostPriorityUiState as LowLightBoostPriorityUiState.Disabled)
-                    .disabledRationale
+
+            is LowLightBoostPriorityUiState.Disabled -> disabledRationaleString(
+                lowLightBoostPriorityUiState.disabledRationale
             )
         },
         popupContents = {
@@ -449,8 +456,7 @@ fun LowLightBoostPrioritySetting(
                         BTN_DIALOG_LOW_LIGHT_BOOST_PRIORITY_OPTION_AE_MODE_TAG
                     ),
                     text = stringResource(id = R.string.low_light_boost_priority_selector_ae_mode),
-                    selected = lowLightBoostPriorityUiState.currentLowLightBoostPriority ==
-                        LowLightBoostPriority.PRIORITIZE_AE_MODE,
+                    selected = currentPriority == LowLightBoostPriority.PRIORITIZE_AE_MODE,
                     enabled = true,
                     onClick = { setLowLightBoostPriority(LowLightBoostPriority.PRIORITIZE_AE_MODE) }
                 )
@@ -461,7 +467,7 @@ fun LowLightBoostPrioritySetting(
                     text = stringResource(
                         id = R.string.low_light_boost_priority_selector_camera_effect
                     ),
-                    selected = lowLightBoostPriorityUiState.currentLowLightBoostPriority ==
+                    selected = currentPriority ==
                         LowLightBoostPriority.PRIORITIZE_GOOGLE_PLAY_SERVICES,
                     enabled = true,
                     onClick = {

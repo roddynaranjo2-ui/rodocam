@@ -22,6 +22,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -33,10 +34,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowContentResolver
 import org.robolectric.shadows.ShadowLog
 
+// Robolectric no soporta todavia compileSdk 37 / targetSdk 36: fijamos un SDK soportado
+// (>= Q, necesario para la ruta IS_PENDING de MediaStore que ejercita el test).
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [Build.VERSION_CODES.TIRAMISU])
 class HeicImagePostProcessorTest {
 
     private lateinit var contentResolver: ContentResolver

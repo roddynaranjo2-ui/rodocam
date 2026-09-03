@@ -122,6 +122,7 @@ fun ProModeToggle(
  * Live exposure readout ("ISO 100 · 1/120 · +0.3 EV") shown above the zoom row while Pro mode is
  * on, mirroring the Pixel Pro overlay. Tapping any chip expands its slider.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ManualControlsPanel(
     manualControlsUiState: ManualControlsUiState,

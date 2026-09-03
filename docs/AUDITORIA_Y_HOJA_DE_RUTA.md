@@ -4,7 +4,7 @@
 > **Base auditada:** `main @ 68b0c8c` (fork de Google *JetpackCamera* — JCA)
 > **Dispositivo objetivo primario:** Samsung Galaxy S21 FE (Exynos 2100 / SD 888, Camera2 `FULL`, 3 lentes traseras 12 MP W / 12 MP UW / 8 MP Tele 3x + frontal 32 MP)
 > **Meta:** app equivalente a la cámara del **Google Pixel 10 Pro XL**, publicable en Play Store, compatible con cualquier dispositivo y con acceso a todas las lentes/capacidades.
-> **Stack:** CameraX 1.6.2 · Compose BOM 2026.08.00 · Material3 1.4.0 (Expressive) · Kotlin 2.2.0 · AGP 9.3.1 · Gradle 9.6.1 · Hilt 2.59.2 (kapt) · compileSdk 37.1 · minSdk 24 · targetSdk 35
+> **Stack (tras el PR #1):** CameraX 1.6.2 · Compose BOM 2025.10.01 · Material3 1.5.0-alpha07 (Expressive) · Media3 1.9.4 · Robolectric 4.16.1 (sdk=35) · Kotlin 2.2.0 · AGP 9.3.1 · Gradle 9.6.1 · Hilt 2.59.2 (kapt) · compileSdk 37.1 · minSdk 24 · targetSdk 36
 
 ---
 
@@ -146,238 +146,39 @@ Leyenda de severidad: 🔴 **Crítico** (crash/leak/pérdida de datos) · 🟠 *
 | Sin retención de artefactos | Default 90 días; sin nombre único por SHA. |
 | Hook de git en CI | `installGitHooks` intenta escribir en `.git/hooks` (B-01). |
 
-## 2.2 Workflow optimizado — COPIAR ÍNTEGRO en `.github/workflows/build-apk.yml`
+## 2.2 Workflow optimizado — fuente de verdad: `docs/ci/build-apk.yml`
 
-> Copia también disponible en el repo: [`docs/ci/build-apk.proposed.yml`](ci/build-apk.proposed.yml)
+> El token de la GitHub App que usa el agente **no tiene permiso `workflows`**, por lo que no puede
+> modificar `.github/workflows/*`. El workflow definitivo se mantiene en
+> [`docs/ci/build-apk.yml`](ci/build-apk.yml) y debe copiarse **íntegro** a
+> `.github/workflows/build-apk.yml` cada vez que cambie (ya está sincronizado con `main @ b63a225`).
 
-```yaml
-# =============================================================================
-#  RodoCam — CI/CD de compilación Android
-#  Ruta destino EXACTA (copiar/pegar):  .github/workflows/build-apk.yml
-# =============================================================================
+Resumen del workflow:
 
-name: Build Android APK
+| Job | Qué hace |
+|---|---|
+| `unit-tests` | JDK 17 Temurin + `android-actions/setup-android@v3` + `gradle/actions/setup-gradle@v4`. Ejecuta con `--continue` los tests JVM de `:core:model`, `:core:camera`, `:core:camera:postprocess:heic`, `:feature:preview`, `:ui:components:capture`, `:ui:uistateadapter:capture` y `:ui:controller:impl`; sube los informes HTML/XML como artefacto. |
+| `build` | `:app:assembleStableDebug` siempre; `:app:assembleStableRelease` solo si `build_release=true` o hay tag `v*` y existe `ANDROID_KEYSTORE_BASE64`. Artefactos `RodoCam-stable-debug-APK` / `RodoCam-stable-release-APK`. |
+| `ci-status` | Check único para *branch protection*: falla si `unit-tests` o `build` no terminan en `success`. |
 
-on:
-  push:
-    branches: [ main, genspark_ai_developer ]
-    tags: [ 'v*' ]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-  pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-  workflow_dispatch:
-    inputs:
-      build_release:
-        description: 'Compilar también la variante release (requiere secretos de firma)'
-        type: boolean
-        default: false
+Disparadores: `push` a `main`/`genspark_ai_developer` y tags `v*` (ignorando `**.md` y `docs/**`), `pull_request` a `main`, `workflow_dispatch` (input `build_release`). Memoria: `GRADLE_OPTS` `-Xmx4g`, `workers.max=2`, daemon de Kotlin `-Xmx2g`, `CI=true` (desactiva `installGitHooks`).
 
-permissions:
-  contents: read
-  actions: read
-  checks: write
+### 2.2.1 Incidente de compilación (run 33692863055) y correcciones aplicadas
 
-concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+El primer `workflow_dispatch` sobre `main` falló en los tres jobs. Causas y remedios, ya incluidos en el PR #1:
 
-env:
-  # Sobrescribe el -Xmx8192m de gradle.properties: los runners tienen ~7 GB.
-  GRADLE_OPTS: >-
-    -Dorg.gradle.jvmargs=-Xmx4g\ -XX:MaxMetaspaceSize=1g\ -XX:+HeapDumpOnOutOfMemoryError\ -Dfile.encoding=UTF-8
-    -Dorg.gradle.daemon=false
-    -Dorg.gradle.workers.max=2
-  KOTLIN_DAEMON_JVM_OPTIONS: -Xmx2g
-  # Evita que el task installGitHooks escriba en .git/hooks en CI.
-  CI: 'true'
+| Causa | Efecto en CI | Corrección |
+|---|---|---|
+| El commit `68b0c8c` de `main` bajó `composeMaterial` a **1.4.0** y `composeBom` a 2026.08.00; `media3` fijado en 1.11.0 (arrastra un BOM de Compose incompatible). | `Unresolved reference: ToggleButton / ButtonGroupDefaults / ExperimentalMaterial3ExpressiveApi …` en `:ui:components:capture` y `:feature:preview`. | `composeMaterial = 1.5.0-alpha07` (único release con la API Expressive usada; verificado contra los AAR), `composeBom = 2025.10.01`, `androidxMedia3 = 1.9.4`. Comentado en `libs.versions.toml` para que no vuelva a bajarse. |
+| `main` aún no contenía el módulo `:core:camera:postprocess:heic` referenciado por el workflow. | `Project 'heic' not found`. | Se resuelve al fusionar el PR (el módulo vive en la rama). |
+| `ImageCaptureException.ERROR_UNKNOWN` no existe en CameraX 1.6.2. | Error de compilación en `RawJpegCapture`. | `ImageCapture.ERROR_UNKNOWN`. |
+| *Smart-cast* de `sealed interface` perdido dentro de lambdas/extension functions (`FocusState`, `AspectRatioUiState`, `LowLightBoostPriorityUiState`). | `Smart cast to … is impossible`. | Extracción a variables locales tipadas / función de extensión `isRunningLockRequestAt`. |
+| Falta `@OptIn(ExperimentalMaterial3ExpressiveApi::class)` en `ManualControlsPanel`; falta dependencia `:core:settings` en `:ui:controller:impl`. | Errores de compilación. | Añadidos. |
+| Robolectric 4.15.1 no soporta `targetSdk 36`; 4.16.1 sí, pero API 36 requiere **Java 21** (el CI usa 17). | `SdkNotSupported` / `Robolectric requires Java 21`. | `robolectric = 4.16.1` + `src/test/resources/robolectric.properties` (`sdk=35`) en los 13 módulos con tests Android. |
+| `androidx.heifwriter:1.1.0` declara `minSdk 28` (la app es 24+). | `Manifest merger failed: uses-sdk:minSdkVersion 24 cannot be smaller than 28`. | `AndroidManifest.xml` del módulo HEIC con `<uses-sdk tools:overrideLibrary="androidx.heifwriter"/>`; todo el uso está protegido por `SDK_INT >= P`/`@RequiresApi(P)` con *fallback* a JPEG. |
+| `stopVideoRecording()` hacía `join()` del job de arranque en lugar de cancelarlo. | `PreviewViewModelTest.fastStartAndStopVideoRecording_cancelsRecording` en rojo. | Restaurada la semántica *upstream* (`recordingJob?.cancel()` síncrono, que evita la carrera start-after-stop en el canal del `CameraSystem`), manteniendo la propagación de `VideoCaptureError` ante fallos al iniciar. |
 
-jobs:
-  static-analysis:
-    name: Lint (spotless / ktlint)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # spotless ratchetFrom origin/main necesita historial
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          gradle-home-cache-cleanup: true
-
-      - name: Spotless check
-        run: |
-          chmod +x gradlew
-          ./gradlew --init-script gradle/init.gradle.kts spotlessCheck \
-            --no-daemon --stacktrace --console=plain
-        continue-on-error: true   # Cambiar a false cuando el código esté formateado
-
-  unit-tests:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools cmake;3.22.1'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          gradle-home-cache-cleanup: true
-
-      - name: Run unit tests (flavor stable, debug)
-        run: |
-          chmod +x gradlew
-          ./gradlew testStableDebugUnitTest \
-            --no-daemon --stacktrace --console=plain --continue
-
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-reports
-          path: |
-            **/build/reports/tests/**
-            **/build/test-results/**
-          retention-days: 14
-          if-no-files-found: ignore
-
-  build:
-    name: Build APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    needs: [ static-analysis ]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools cmake;3.22.1'
-
-      - name: Accept SDK licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          gradle-home-cache-cleanup: true
-          build-scan-publish: false
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Print environment (diagnóstico)
-        run: |
-          ./gradlew --version
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          free -h
-
-      - name: Build Debug APK
-        run: ./gradlew :app:assembleStableDebug --no-daemon --stacktrace --console=plain
-
-      - name: Decode keystore
-        id: keystore
-        if: >-
-          (startsWith(github.ref, 'refs/tags/v') || inputs.build_release == true)
-          && secrets.ANDROID_KEYSTORE_BASE64 != ''
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
-          echo "path=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
-
-      - name: Build Release APK (firmado)
-        if: steps.keystore.outcome == 'success'
-        env:
-          RODOCAM_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
-          RODOCAM_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          RODOCAM_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          RODOCAM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleStableRelease --no-daemon --stacktrace --console=plain
-
-      - name: Verify generated APKs
-        run: |
-          find app/build/outputs -type f \( -name '*.apk' -o -name 'mapping.txt' \) -print
-          test -n "$(find app/build/outputs/apk -name '*.apk' -print -quit)"
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: rodocam-debug-apk-${{ github.sha }}
-          path: app/build/outputs/apk/stable/debug/*.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload Release APK + mapping
-        if: steps.keystore.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: rodocam-release-${{ github.sha }}
-          path: |
-            app/build/outputs/apk/stable/release/*.apk
-            app/build/outputs/mapping/stableRelease/mapping.txt
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Upload Lint reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-reports
-          path: '**/build/reports/lint-results*.html'
-          if-no-files-found: ignore
-          retention-days: 14
-
-  ci-status:
-    name: CI status
-    runs-on: ubuntu-latest
-    needs: [ static-analysis, unit-tests, build ]
-    if: always()
-    steps:
-      - name: Evaluate
-        run: |
-          echo "static-analysis: ${{ needs.static-analysis.result }}"
-          echo "unit-tests:      ${{ needs.unit-tests.result }}"
-          echo "build:           ${{ needs.build.result }}"
-          if [ "${{ needs.build.result }}" != "success" ] || [ "${{ needs.unit-tests.result }}" != "success" ]; then
-            echo "::error::Un job crítico falló"; exit 1
-          fi
-```
-
-### 2.3 Cambios en el repo que acompañan al workflow (los haré en Fase 1)
+### 2.3 Cambios en el repo que acompañan al workflow (hechos en Fase 1)
 
 1. **`app/build.gradle.kts`** — `signingConfigs.create("release")` leyendo `RODOCAM_KEYSTORE_PATH/PASSWORD/KEY_ALIAS/KEY_PASSWORD` de `System.getenv()` con fallback a `keystore.properties` (gitignored); `buildTypes.release.signingConfig = signingConfigs.getByName("release")` solo si el keystore existe.
 2. **`build.gradle.kts`** — `installGitHooks` con `onlyIf { System.getenv("CI") == null }` y sin `taskGraph.whenReady`.
@@ -412,16 +213,16 @@ Cada fase termina con: build verde en CI, APK instalable en el S21 FE, checklist
 |---|------|--------|-----------------|
 | 1 | 9 `TODO()` de runtime (K-01…K-05) | ✅ Hecho | `ZoomBarComponents`, `TestTags`, `CaptureScreenComponents`, `CaptureButtonComponents`, `CaptureModeUiStateAdapter`, `SettingsComponents` + strings nuevos. |
 | 2 | Ciclo de vida de sesión (C-01, C-02, C-04, C-05, C-06, C-17, U-01) | ✅ Hecho | `CameraControllerImpl` con `Mutex`+`cancelAndJoin` y callback `onCameraError` → snackbar; `CameraXCameraSystem` sin `lateinit`/`!!`, `unbindAll` en `NonCancellable + Main.immediate`; `CoroutineLifecycleOwner` siempre en main thread; estabilización `AUTO` degrada a `OFF`. `InitState` flow y debounce quedan para Fase 2 (no bloqueantes). |
-| 3 | Errores de captura (C-03, C-08, C-11, U-02, U-03) | ✅ Hecho | `ImageCaptureUnavailableException`/`VideoCaptureUnavailableException`; `StartRecording` sin `VideoCapture` emite `OnVideoRecordError`; `SecurityException` de audio → graba sin audio; `stopVideoRecording` espera al start (`join`) y no lo cancela; `VideoCaptureError` ante cualquier fallo al iniciar. |
+| 3 | Errores de captura (C-03, C-08, C-11, U-02, U-03) | ✅ Hecho | `ImageCaptureUnavailableException`/`VideoCaptureUnavailableException`; `StartRecording` sin `VideoCapture` emite `OnVideoRecordError`; `SecurityException` de audio → graba sin audio; `stopVideoRecording` cancela síncronamente el job de arranque (semántica *upstream*, evita la carrera start-after-stop; cubierto por `fastStartAndStopVideoRecording_cancelsRecording`); `VideoCaptureError` ante cualquier fallo al iniciar. |
 | 4 | Gestos (U-04, U-08, K-07) | ✅ Hecho | Lambda `tapToFocus` memorizada; `ZoomStateManager.onZoomRangeChanged`; `PreviewDisplay` con `rememberUpdatedState`, `pointerInput(Unit)`, deltas de pinch no-op filtrados. Doble-tap 1x↔2x → Fase 3 (UX Pixel). |
 | 5 | Permisos de galería (U-05) | ✅ Hecho | `getLastCapturedMedia` en IO y tolerante a `SecurityException` (API ≤ 28 sin permiso). |
 | 6 | Manifest/Play (A-01, A-03, A-04, A-05, B-04) | ✅ Hecho | Intent-filters `IMAGE_CAPTURE`/`VIDEO_CAPTURE`/`STILL_IMAGE_CAMERA(_SECURE)`/`VIDEO_CAMERA`; `targetSdk 36`; `signingConfigs.release` desde `RODOCAM_*` o `keystore.properties`; `proguard-rules.pro`; `versionCode` desde `GITHUB_RUN_NUMBER`. A-02 (orientación en tablets) → Fase 3. |
 | 7 | Build (B-01, B-02) | ✅ Hecho | `installGitHooks` `onlyIf !CI` sin `taskGraph.whenReady`; `-Xmx4g`. B-03 (kapt→KSP) → Fase 2, requiere validar con CI verde primero. |
 | 8 | Limpieza (A-03, A-04, C-07, C-12, C-16, U-06) | ✅ Hecho | `Camera.ACTION_NEW_PICTURE` eliminado; helpers cropRect corregidos + `CropRectDimensionsTest`; `ImageOutputFormat.mimeType/fileExtension`; `DebugUiState` reactivo. |
 | 9 | Observabilidad (`CameraErrorHandler`, Timber) | ⏳ Pendiente | Se hará junto con Fase 2 cuando existan más fuentes de error. |
-| 10 | QA manual S21 FE | ⏳ Pendiente | Requiere el APK de CI (`.github/workflows/build-apk.yml` debe sustituirse por `docs/ci/build-apk.proposed.yml`). |
+| 10 | QA manual S21 FE | ⏳ Pendiente | Requiere el APK de CI (artefacto `RodoCam-stable-debug-APK` del workflow; `.github/workflows/build-apk.yml` ya sincronizado con `docs/ci/build-apk.yml`). |
 
-> Verificación: en el sandbox no hay Android SDK, por lo que la validación ha sido estática (imports, tipos, llamadas cruzadas). El primer build real lo hará GitHub Actions al abrir/actualizar el PR.
+> Verificación: en el sandbox no hay Android SDK, por lo que la validación local ha sido estática (imports, tipos, llamadas cruzadas). El build real y los tests JVM los ejecuta GitHub Actions en cada push a la rama del PR (ver §2.2.1 para el historial de correcciones hasta el primer run verde).
 
 ## Fase 2 — Control profesional y multi-cámara real (2–4 semanas)
 

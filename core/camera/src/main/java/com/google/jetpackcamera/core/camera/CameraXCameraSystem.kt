@@ -1119,9 +1119,7 @@ class CameraXCameraSystem(
             // Phase 1: the session picked up our lock request.
             focusStates.first { it.isLockRequestAt(x, y) }
             // Phase 2: metering finished, or a newer request replaced ours.
-            focusStates.first {
-                !(it.isLockRequestAt(x, y) && it.status == FocusState.Status.RUNNING)
-            }
+            focusStates.first { !it.isRunningLockRequestAt(x, y) }
         }
         if (converged?.isLockRequestAt(x, y) == true) {
             setViewfinderLocks(locked = true)
@@ -1130,6 +1128,13 @@ class CameraXCameraSystem(
 
     private fun FocusState.isLockRequestAt(x: Float, y: Float): Boolean =
         this is FocusState.Specified && isLocked && this.x == x && this.y == y
+
+    private fun FocusState.isRunningLockRequestAt(x: Float, y: Float): Boolean =
+        this is FocusState.Specified &&
+            isLocked &&
+            this.x == x &&
+            this.y == y &&
+            status == FocusState.Status.RUNNING
 
     /**
      * Mirrors the long-press AE/AF lock into [ManualControls.aeLock]/[ManualControls.awbLock] so

@@ -82,7 +82,7 @@ suspend fun ImageCapture.takeRawJpegPicture(
                         // Two outputs but no JPEG among them: should not happen, but never hang.
                         continuation.resumeWithException(
                             ImageCaptureException(
-                                ImageCaptureException.ERROR_UNKNOWN,
+                                ImageCapture.ERROR_UNKNOWN,
                                 "RAW+JPEG capture finished without a JPEG output",
                                 null
                             )

@@ -188,14 +188,12 @@ class CaptureControllerImpl(
 
     override fun stopVideoRecording() {
         Log.d(TAG, "stopVideoRecording")
-        val startJob = recordingJob
+        // Cancel the start job synchronously: if the user taps start/stop faster than the
+        // start request can be delivered, the recording is never requested at all, which
+        // protects the camera system channel from a start-after-stop race condition.
+        recordingJob?.cancel()
         recordingJob = null
         scope.launch {
-            // Make sure the start request has actually been delivered before we send the stop
-            // request. Cancelling the start job here (previous behaviour) could drop the
-            // StartRecordingEvent while the StopRecordingEvent was still delivered, leaving
-            // the camera system and the UI out of sync.
-            startJob?.join()
             cameraSystem.stopVideoRecording()
         }
     }
