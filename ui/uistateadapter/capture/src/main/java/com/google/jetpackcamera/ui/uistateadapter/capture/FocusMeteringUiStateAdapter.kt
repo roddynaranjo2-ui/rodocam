@@ -44,7 +44,8 @@ fun FocusMeteringUiState.updateFrom(cameraState: CameraState): FocusMeteringUiSt
             if (focusState is FocusState.Specified &&
                 this.surfaceCoordinates.x == focusState.x &&
                 this.surfaceCoordinates.y == focusState.y &&
-                this.status.name == focusState.status.name
+                this.status.name == focusState.status.name &&
+                this.isLocked == focusState.isLocked
             ) {
                 this
             } else {
@@ -77,7 +78,8 @@ fun FocusMeteringUiState.Companion.from(cameraState: CameraState): FocusMetering
             }
             FocusMeteringUiState.Specified(
                 surfaceCoordinates = Offset(focusState.x, focusState.y),
-                status = status
+                status = status,
+                isLocked = focusState.isLocked
             )
         }
     }

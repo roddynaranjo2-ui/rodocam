@@ -25,11 +25,13 @@ import com.google.jetpackcamera.ui.uistate.capture.CaptureButtonUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.ElapsedTimeUiState
+import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
 import com.google.jetpackcamera.ui.uistate.capture.ImageWellUiState
+import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
 import com.google.jetpackcamera.ui.uistate.capture.ScreenFlashUiState
 import com.google.jetpackcamera.ui.uistate.capture.StabilizationUiState
 import com.google.jetpackcamera.ui.uistate.capture.TrackedCaptureUiState
@@ -98,6 +100,10 @@ fun captureUiState(
             cameraAppSettings,
             systemConstraints
         )
+        val extensionModeUiState = ExtensionModeUiState.from(
+            cameraAppSettings,
+            systemConstraints
+        )
 
         flashModeUiState = flashModeUiState.let {
             it?.updateFrom(
@@ -130,7 +136,8 @@ fun captureUiState(
                 flipLensUiState,
                 aspectRatioUiState,
                 hdrUiState,
-                trackedUiState.isQuickSettingsOpen
+                trackedUiState.isQuickSettingsOpen,
+                extensionModeUiState
             ),
             sessionFirstFrameTimestamp = roundedCameraState.sessionFirstFrameTimestamp,
             stabilizationUiState = StabilizationUiState.from(
@@ -172,7 +179,14 @@ fun captureUiState(
                 trackedUiState.recentCapturedMedia,
                 roundedVideoRecordingState
             ),
-            screenFlashUiState = ScreenFlashUiState.from(trackedUiState)
+            screenFlashUiState = ScreenFlashUiState.from(trackedUiState),
+            manualControlsUiState = ManualControlsUiState.from(
+                cameraAppSettings,
+                systemConstraints,
+                roundedCameraState,
+                externalCaptureMode,
+                trackedUiState.isProPanelOpen
+            )
         )
     }
 }

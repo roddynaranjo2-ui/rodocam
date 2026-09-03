@@ -16,6 +16,7 @@
 package com.google.jetpackcamera.core.camera
 
 import android.net.Uri
+import com.google.jetpackcamera.model.ExposureInfo
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostState
 import com.google.jetpackcamera.model.StabilizationMode
@@ -49,7 +50,9 @@ data class CameraState(
     val lowLightBoostState: LowLightBoostState = LowLightBoostState.Inactive,
     val debugInfo: DebugInfo = DebugInfo(null, null),
     val videoQualityInfo: VideoQualityInfo = VideoQualityInfo(VideoQuality.UNSPECIFIED, 0, 0),
-    val focusState: FocusState = FocusState.Unspecified
+    val focusState: FocusState = FocusState.Unspecified,
+    /** Real-time ISO / shutter / focus readout from the latest `TotalCaptureResult`. */
+    val exposureInfo: ExposureInfo = ExposureInfo.UNKNOWN
 )
 
 /**
@@ -77,11 +80,14 @@ sealed interface FocusState {
      * @param x The x-coordinate of the focus point.
      * @param y The y-coordinate of the focus point.
      * @param status The status of the focus operation.
+     * @param isLocked True when focus/exposure are locked at this point (long-press) and will
+     *   not auto-cancel until the user taps again.
      */
     data class Specified(
         val x: Float,
         val y: Float,
-        val status: Status
+        val status: Status,
+        val isLocked: Boolean = false
     ) : FocusState
 
     /**

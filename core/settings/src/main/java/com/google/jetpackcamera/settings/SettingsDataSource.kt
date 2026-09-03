@@ -17,6 +17,7 @@ package com.google.jetpackcamera.settings
 
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -113,4 +114,14 @@ interface SettingsDataSource {
      * Updates the default concurrent camera mode.
      */
     suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode)
+
+    /**
+     * Updates whether Pro mode (manual controls panel) is enabled by default.
+     */
+    suspend fun updateProModeEnabled(isProModeEnabled: Boolean)
+
+    /**
+     * Updates the vendor extension mode (Night, Bokeh, HDR, Face retouch) used by default.
+     */
+    suspend fun updateExtensionMode(extensionMode: CameraExtensionMode)
 }

@@ -18,7 +18,6 @@ package com.google.jetpackcamera
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.hardware.Camera
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -87,7 +86,6 @@ private const val TAG = "MainActivity"
 class MainActivity : ComponentActivity() {
     private val viewModel: MainActivityViewModel by viewModels()
 
-    @RequiresApi(Build.VERSION_CODES.M)
     @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -204,6 +202,10 @@ class MainActivity : ComponentActivity() {
                 MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA ->
                     ExternalCaptureMode.MultipleImageCapture
 
+                // "Open the camera" style intents: behave like a normal launch.
+                MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE,
+                MediaStore.INTENT_ACTION_VIDEO_CAMERA -> ExternalCaptureMode.Standard
+
                 else -> {
                     Log.w(TAG, "Ignoring external intent with unknown action: $action")
                     ExternalCaptureMode.Standard
@@ -298,16 +300,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                ExternalCaptureMode.Standard -> { event ->
-                    if (event is ImageCaptureEvent.ImageCaptured &&
-                        event !is ImageCaptureEvent.SingleImageCached
-                    ) {
-                        @Suppress("DEPRECATION")
-                        val intent = Intent(Camera.ACTION_NEW_PICTURE)
-                        intent.data = event.capturedUri
-                        sendBroadcast(intent)
-                    }
-                }
+                // Nothing to do for a standard launch: media saved through MediaStore is
+                // already visible to other apps (Camera.ACTION_NEW_PICTURE is deprecated and
+                // has no effect since API 24, which is our minSdk).
+                ExternalCaptureMode.Standard -> { _ -> }
             }
         }
 

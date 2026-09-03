@@ -65,6 +65,7 @@ import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
+import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.NONE_EFFECT_ID
@@ -85,6 +86,7 @@ import com.google.jetpackcamera.settings.FIVE_SECONDS_DURATION
 import com.google.jetpackcamera.settings.FlashUiState
 import com.google.jetpackcamera.settings.FlipLensUiState
 import com.google.jetpackcamera.settings.FpsUiState
+import com.google.jetpackcamera.settings.ImageFormatUiState
 import com.google.jetpackcamera.settings.LowLightBoostPriorityUiState
 import com.google.jetpackcamera.settings.MaxVideoDurationUiState
 import com.google.jetpackcamera.settings.R
@@ -301,49 +303,53 @@ fun AspectRatioSetting(
     setAspectRatio: (AspectRatio) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // AspectRatioUiState currently only has an Enabled variant. Resolve it once so the popup keeps
+    // a typed reference (a `when` on a sealed interface must stay exhaustive if a Disabled state is
+    // ever added, which is exactly what we want).
+    val currentAspectRatio: AspectRatio? = when (aspectRatioUiState) {
+        is AspectRatioUiState.Enabled -> aspectRatioUiState.currentAspectRatio
+    }
     BasicPopupSetting(
         modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_ASPECT_RATIO_TAG),
         title = stringResource(id = R.string.aspect_ratio_title),
         leadingIcon = null,
         description =
-        if (aspectRatioUiState is AspectRatioUiState.Enabled) {
-            when (aspectRatioUiState.currentAspectRatio) {
-                AspectRatio.NINE_SIXTEEN -> stringResource(
-                    id = R.string.aspect_ratio_description_9_16
-                )
+        when (currentAspectRatio) {
+            AspectRatio.NINE_SIXTEEN -> stringResource(
+                id = R.string.aspect_ratio_description_9_16
+            )
 
-                AspectRatio.THREE_FOUR -> stringResource(
-                    id = R.string.aspect_ratio_description_3_4
-                )
+            AspectRatio.THREE_FOUR -> stringResource(
+                id = R.string.aspect_ratio_description_3_4
+            )
 
-                AspectRatio.ONE_ONE -> stringResource(
-                    id = R.string.aspect_ratio_description_1_1
-                )
-            }
-        } else {
-            TODO("aspect ratio currently has no disabled criteria")
+            AspectRatio.ONE_ONE -> stringResource(
+                id = R.string.aspect_ratio_description_1_1
+            )
+
+            null -> stringResource(id = R.string.setting_unavailable_description)
         },
-        enabled = true,
+        enabled = currentAspectRatio != null,
         popupContents = {
             Column(Modifier.selectableGroup()) {
                 SingleChoiceSelector(
                     modifier = Modifier.testTag(BTN_DIALOG_ASPECT_RATIO_OPTION_9_16_TAG),
                     text = stringResource(id = R.string.aspect_ratio_selector_9_16),
-                    selected = aspectRatioUiState.currentAspectRatio == AspectRatio.NINE_SIXTEEN,
+                    selected = currentAspectRatio == AspectRatio.NINE_SIXTEEN,
                     enabled = true,
                     onClick = { setAspectRatio(AspectRatio.NINE_SIXTEEN) }
                 )
                 SingleChoiceSelector(
                     modifier = Modifier.testTag(BTN_DIALOG_ASPECT_RATIO_OPTION_3_4_TAG),
                     text = stringResource(id = R.string.aspect_ratio_selector_3_4),
-                    selected = aspectRatioUiState.currentAspectRatio == AspectRatio.THREE_FOUR,
+                    selected = currentAspectRatio == AspectRatio.THREE_FOUR,
                     enabled = true,
                     onClick = { setAspectRatio(AspectRatio.THREE_FOUR) }
                 )
                 SingleChoiceSelector(
                     modifier = Modifier.testTag(BTN_DIALOG_ASPECT_RATIO_OPTION_1_1_TAG),
                     text = stringResource(id = R.string.aspect_ratio_selector_1_1),
-                    selected = aspectRatioUiState.currentAspectRatio == AspectRatio.ONE_ONE,
+                    selected = currentAspectRatio == AspectRatio.ONE_ONE,
                     enabled = true,
                     onClick = { setAspectRatio(AspectRatio.ONE_ONE) }
                 )
@@ -416,15 +422,21 @@ fun LowLightBoostPrioritySetting(
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentPriority: LowLightBoostPriority? = when (lowLightBoostPriorityUiState) {
+        is LowLightBoostPriorityUiState.Enabled ->
+            lowLightBoostPriorityUiState.currentLowLightBoostPriority
+
+        is LowLightBoostPriorityUiState.Disabled -> null
+    }
     BasicPopupSetting(
         modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_LOW_LIGHT_BOOST_PRIORITY_TAG),
         title = stringResource(R.string.low_light_boost_priority_title),
         leadingIcon = null,
-        enabled = true,
+        enabled = currentPriority != null,
         description =
-        if (lowLightBoostPriorityUiState is LowLightBoostPriorityUiState.Enabled) {
-            when (lowLightBoostPriorityUiState.currentLowLightBoostPriority) {
-                LowLightBoostPriority.PRIORITIZE_AE_MODE -> stringResource(
+        when (lowLightBoostPriorityUiState) {
+            is LowLightBoostPriorityUiState.Enabled -> when (currentPriority) {
+                LowLightBoostPriority.PRIORITIZE_AE_MODE, null -> stringResource(
                     id = R.string.low_light_boost_priority_description_ae_mode
                 )
 
@@ -432,8 +444,10 @@ fun LowLightBoostPrioritySetting(
                     id = R.string.low_light_boost_priority_description_camera_effect
                 )
             }
-        } else {
-            TODO("low light boost priority currently has no disabled criteria")
+
+            is LowLightBoostPriorityUiState.Disabled -> disabledRationaleString(
+                lowLightBoostPriorityUiState.disabledRationale
+            )
         },
         popupContents = {
             Column(Modifier.selectableGroup()) {
@@ -442,8 +456,7 @@ fun LowLightBoostPrioritySetting(
                         BTN_DIALOG_LOW_LIGHT_BOOST_PRIORITY_OPTION_AE_MODE_TAG
                     ),
                     text = stringResource(id = R.string.low_light_boost_priority_selector_ae_mode),
-                    selected = lowLightBoostPriorityUiState.currentLowLightBoostPriority ==
-                        LowLightBoostPriority.PRIORITIZE_AE_MODE,
+                    selected = currentPriority == LowLightBoostPriority.PRIORITIZE_AE_MODE,
                     enabled = true,
                     onClick = { setLowLightBoostPriority(LowLightBoostPriority.PRIORITIZE_AE_MODE) }
                 )
@@ -454,7 +467,7 @@ fun LowLightBoostPrioritySetting(
                     text = stringResource(
                         id = R.string.low_light_boost_priority_selector_camera_effect
                     ),
-                    selected = lowLightBoostPriorityUiState.currentLowLightBoostPriority ==
+                    selected = currentPriority ==
                         LowLightBoostPriority.PRIORITIZE_GOOGLE_PLAY_SERVICES,
                     enabled = true,
                     onClick = {
@@ -533,7 +546,8 @@ private fun getTargetFpsTestTag(fpsOption: Int): String = when (fpsOption) {
     TARGET_FPS_30 -> BTN_DIALOG_FPS_OPTION_30_TAG
     TARGET_FPS_60 -> BTN_DIALOG_FPS_OPTION_60_TAG
     TARGET_FPS_AUTO -> BTN_DIALOG_FPS_OPTION_AUTO_TAG
-    else -> TODO("Unhandled FPS option for test tag: $fpsOption")
+    // Deterministic tag for any additional frame rate (e.g. 24, 120) exposed in the future.
+    else -> "btn_dialog_fps_option_${fpsOption}_tag"
 }
 
 @Composable
@@ -553,7 +567,7 @@ fun TargetFpsSetting(
                 TARGET_FPS_30 -> stringResource(id = R.string.fps_description, TARGET_FPS_30)
                 TARGET_FPS_60 -> stringResource(id = R.string.fps_description, TARGET_FPS_60)
                 TARGET_FPS_AUTO -> stringResource(id = R.string.fps_description_auto)
-                else -> TODO("Unhandled Target FPS")
+                else -> stringResource(id = R.string.fps_description, fpsUiState.currentSelection)
             }
         } else {
             disabledRationaleString((fpsUiState as FpsUiState.Disabled).disabledRationale)
@@ -574,27 +588,13 @@ fun TargetFpsSetting(
                         onClick = { setTargetFps(TARGET_FPS_AUTO) },
                         enabled = fpsUiState.fpsAutoState is SingleSelectableState.Selectable
                     )
-                    listOf(TARGET_FPS_15, TARGET_FPS_30, TARGET_FPS_60).forEach { fpsOption ->
+                    fpsUiState.fpsOptionStates.forEach { (fpsOption, optionState) ->
                         SingleChoiceSelector(
                             modifier = Modifier.testTag(getTargetFpsTestTag(fpsOption)),
                             text = "%d".format(fpsOption),
                             selected = fpsUiState.currentSelection == fpsOption,
                             onClick = { setTargetFps(fpsOption) },
-                            enabled = when (fpsOption) {
-                                TARGET_FPS_15 ->
-                                    fpsUiState.fpsFifteenState is
-                                        SingleSelectableState.Selectable
-
-                                TARGET_FPS_30 ->
-                                    fpsUiState.fpsThirtyState is
-                                        SingleSelectableState.Selectable
-
-                                TARGET_FPS_60 ->
-                                    fpsUiState.fpsSixtyState is
-                                        SingleSelectableState.Selectable
-
-                                else -> false
-                            }
+                            enabled = optionState is SingleSelectableState.Selectable
                         )
                     }
                 }
@@ -787,6 +787,67 @@ fun StabilizationSetting(
             }
         }
     )
+}
+
+/**
+ * Setting to choose the still-image container: JPEG, Ultra HDR, HEIC or RAW + JPEG.
+ *
+ * Options are rendered in the order of [ImageFormatUiState.Enabled.optionStates]; unsupported
+ * formats stay visible but disabled so the user learns what the device can do.
+ */
+@Composable
+fun ImageFormatSetting(
+    imageFormatUiState: ImageFormatUiState,
+    setImageFormat: (ImageOutputFormat) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BasicPopupSetting(
+        modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_IMAGE_FORMAT_TAG),
+        title = stringResource(R.string.image_format_title),
+        leadingIcon = null,
+        enabled = imageFormatUiState is ImageFormatUiState.Enabled,
+        description = when (imageFormatUiState) {
+            is ImageFormatUiState.Enabled ->
+                stringResource(getImageFormatStringRes(imageFormatUiState.currentImageFormat))
+
+            is ImageFormatUiState.Disabled ->
+                disabledRationaleString(imageFormatUiState.disabledRationale)
+        },
+        popupContents = {
+            if (imageFormatUiState is ImageFormatUiState.Enabled) {
+                Column(Modifier.selectableGroup()) {
+                    imageFormatUiState.optionStates.forEach { (format, optionState) ->
+                        SingleChoiceSelector(
+                            modifier = Modifier.testTag(
+                                BTN_DIALOG_IMAGE_FORMAT_OPTION_PREFIX + format.name.lowercase()
+                            ),
+                            text = stringResource(getImageFormatStringRes(format)),
+                            secondaryText = stringResource(
+                                getImageFormatSecondaryStringRes(format)
+                            ),
+                            selected = imageFormatUiState.currentImageFormat == format,
+                            enabled = optionState is SingleSelectableState.Selectable,
+                            onClick = { setImageFormat(format) }
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+private fun getImageFormatStringRes(format: ImageOutputFormat): Int = when (format) {
+    ImageOutputFormat.JPEG -> R.string.image_format_value_jpeg
+    ImageOutputFormat.JPEG_ULTRA_HDR -> R.string.image_format_value_ultra_hdr
+    ImageOutputFormat.HEIC -> R.string.image_format_value_heic
+    ImageOutputFormat.RAW_JPEG -> R.string.image_format_value_raw_jpeg
+}
+
+private fun getImageFormatSecondaryStringRes(format: ImageOutputFormat): Int = when (format) {
+    ImageOutputFormat.JPEG -> R.string.image_format_value_jpeg_info
+    ImageOutputFormat.JPEG_ULTRA_HDR -> R.string.image_format_value_ultra_hdr_info
+    ImageOutputFormat.HEIC -> R.string.image_format_value_heic_info
+    ImageOutputFormat.RAW_JPEG -> R.string.image_format_value_raw_jpeg_info
 }
 
 @Composable

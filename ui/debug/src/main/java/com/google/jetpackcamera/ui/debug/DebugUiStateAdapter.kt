@@ -41,7 +41,9 @@ import kotlinx.coroutines.flow.filterNotNull
  * @param cameraSystem The [CameraSystem] providing real-time camera state and settings.
  * @param constraintsRepository The [ConstraintsRepository] for accessing system-wide constraints.
  * @param debugSettings The current debug-specific settings.
- * @param cameraPropertiesJSON A JSON string containing detailed camera properties for display.
+ * @param cameraPropertiesJSON A [Flow] of the JSON string containing detailed camera properties
+ * for display. It is a flow because the properties are only known once the camera system has
+ * finished initializing.
  * @param trackedCaptureUiState A [MutableStateFlow] representing user-interacted UI state,
  * such as whether the debug overlay is open.
  *
@@ -52,15 +54,16 @@ fun debugUiState(
     cameraSystem: CameraSystem,
     constraintsRepository: ConstraintsRepository,
     debugSettings: DebugSettings,
-    cameraPropertiesJSON: String,
+    cameraPropertiesJSON: Flow<String>,
     trackedCaptureUiState: MutableStateFlow<TrackedCaptureUiState>
 ): Flow<DebugUiState> {
     return combine(
         cameraSystem.getCurrentSettings().filterNotNull(),
         constraintsRepository.systemConstraints.filterNotNull(),
         cameraSystem.getCurrentCameraState(),
-        trackedCaptureUiState
-    ) { cameraAppSettings, systemConstraints, cameraState, trackedUiState ->
+        trackedCaptureUiState,
+        cameraPropertiesJSON
+    ) { cameraAppSettings, systemConstraints, cameraState, trackedUiState, propertiesJson ->
         DebugUiState.from(
             systemConstraints,
             cameraAppSettings,
@@ -68,7 +71,7 @@ fun debugUiState(
             trackedUiState.isDebugOverlayOpen,
             trackedUiState.debugHidingComponents,
             debugSettings,
-            cameraPropertiesJSON
+            propertiesJson
         )
     }
 }
@@ -82,7 +85,9 @@ fun debugUiState(
  * @param isDebugOverlayOpen Indicates whether the user has opened the debug overlay.
  * @param debugHidingComponents Indicates whether UI components are being hidden for debugging.
  * @param debugSettings The general debug settings, e.g., if debug mode is on.
- * @param cameraPropertiesJSON A JSON string containing detailed camera properties for display.
+ * @param cameraPropertiesJSON A [Flow] of the JSON string containing detailed camera properties
+ * for display. It is a flow because the properties are only known once the camera system has
+ * finished initializing.
  *
  * @return An appropriate [DebugUiState] which can be [DebugUiState.Enabled.Open],
  * [DebugUiState.Enabled.Closed], or [DebugUiState.Disabled].

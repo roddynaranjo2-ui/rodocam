@@ -14,12 +14,74 @@
  * limitations under the License.
  */
 
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.android.legacy.kapt)
     alias(libs.plugins.dagger.hilt.android)
     alias(libs.plugins.compose.compiler)
 }
+
+/**
+ * Release signing configuration.
+ *
+ * Resolved, in order of precedence, from:
+ *  1. Environment variables (used by CI): RODOCAM_KEYSTORE_PATH, RODOCAM_KEYSTORE_PASSWORD,
+ *     RODOCAM_KEY_ALIAS, RODOCAM_KEY_PASSWORD.
+ *  2. An untracked `keystore.properties` file at the repository root (used locally) with the keys
+ *     storeFile, storePassword, keyAlias, keyPassword.
+ *
+ * If neither is available the release build type falls back to the debug signing config so
+ * `assembleRelease` keeps working for local smoke tests. Such an APK must NOT be uploaded to Play.
+ */
+data class ReleaseSigning(
+    val storeFile: File,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String
+)
+
+fun resolveReleaseSigning(): ReleaseSigning? {
+    val envPath = System.getenv("RODOCAM_KEYSTORE_PATH")
+    if (!envPath.isNullOrBlank()) {
+        val storePassword = System.getenv("RODOCAM_KEYSTORE_PASSWORD")
+        val keyAlias = System.getenv("RODOCAM_KEY_ALIAS")
+        val keyPassword = System.getenv("RODOCAM_KEY_PASSWORD") ?: storePassword
+        if (!storePassword.isNullOrBlank() && !keyAlias.isNullOrBlank() && !keyPassword.isNullOrBlank()) {
+            return ReleaseSigning(file(envPath), storePassword, keyAlias, keyPassword)
+        }
+        logger.warn("RODOCAM_KEYSTORE_PATH is set but the remaining RODOCAM_* variables are missing.")
+    }
+
+    val propsFile = rootProject.file("keystore.properties")
+    if (propsFile.isFile) {
+        val props = Properties().apply { propsFile.inputStream().use { load(it) } }
+        val storeFile = props.getProperty("storeFile")
+        val storePassword = props.getProperty("storePassword")
+        val keyAlias = props.getProperty("keyAlias")
+        val keyPassword = props.getProperty("keyPassword") ?: storePassword
+        if (!storeFile.isNullOrBlank() && !storePassword.isNullOrBlank() &&
+            !keyAlias.isNullOrBlank() && !keyPassword.isNullOrBlank()
+        ) {
+            return ReleaseSigning(rootProject.file(storeFile), storePassword, keyAlias, keyPassword)
+        }
+        logger.warn("keystore.properties found but incomplete; release will use the debug key.")
+    }
+    return null
+}
+
+val releaseSigning: ReleaseSigning? = resolveReleaseSigning()
+
+/**
+ * versionCode is derived from the CI run number when available so every CI build produces a
+ * strictly increasing code (required by Play). Locally it falls back to 1.
+ */
+val computedVersionCode: Int =
+    System.getenv("RODOCAM_VERSION_CODE")?.toIntOrNull()
+        ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        ?: 1
+val computedVersionName: String = System.getenv("RODOCAM_VERSION_NAME") ?: "0.1.0"
 
 android {
     compileSdk {
@@ -34,10 +96,25 @@ android {
         applicationId = "com.google.jetpackcamera"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = computedVersionCode
+        versionName = computedVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
+    }
+
+    signingConfigs {
+        releaseSigning?.let { signing ->
+            create("release") {
+                storeFile = signing.storeFile
+                storePassword = signing.storePassword
+                keyAlias = signing.keyAlias
+                keyPassword = signing.keyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -46,7 +123,20 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = if (releaseSigning != null) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.lifecycle(
+                    "No release keystore configured (RODOCAM_* env or keystore.properties); " +
+                        "release build will be signed with the debug key."
+                )
+                signingConfigs.getByName("debug")
+            }
         }
         create("benchmark") {
             initWith(buildTypes.getByName("release"))
@@ -191,6 +281,7 @@ dependencies {
 
     // Postprocess implementations
     implementation(project(":core:camera:postprocess:postprocess-di"))
+    implementation(project(":core:camera:postprocess:heic"))
 
     implementation(project(":core:camera:low-light-playservices"))
     implementation(project(":core:camera:effects:single-stream"))

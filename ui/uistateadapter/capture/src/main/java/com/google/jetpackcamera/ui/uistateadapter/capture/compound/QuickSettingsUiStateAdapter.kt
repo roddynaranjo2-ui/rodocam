@@ -17,6 +17,7 @@ package com.google.jetpackcamera.ui.uistateadapter.capture.compound
 
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
@@ -33,6 +34,7 @@ import com.google.jetpackcamera.ui.uistate.capture.compound.QuickSettingsUiState
  * @param flipLensUiState The UI state for the flip lens button.
  * @param aspectRatioUiState The UI state for the aspect ratio setting.
  * @param hdrUiState The UI state for the HDR setting.
+ * @param extensionModeUiState The UI state for the CameraX Extensions selector.
  * @param quickSettingsIsOpen Indicates whether the quick settings panel is open.
  * @return A [QuickSettingsUiState.Available] instance containing the consolidated states.
  */
@@ -42,7 +44,8 @@ fun QuickSettingsUiState.Companion.from(
     flipLensUiState: FlipLensUiState,
     aspectRatioUiState: AspectRatioUiState,
     hdrUiState: HdrUiState,
-    quickSettingsIsOpen: Boolean
+    quickSettingsIsOpen: Boolean,
+    extensionModeUiState: ExtensionModeUiState = ExtensionModeUiState.Unavailable
 ): QuickSettingsUiState {
     return QuickSettingsUiState.Available(
         aspectRatioUiState = aspectRatioUiState,
@@ -50,6 +53,7 @@ fun QuickSettingsUiState.Companion.from(
         flashModeUiState = flashModeUiState,
         flipLensUiState = flipLensUiState,
         hdrUiState = hdrUiState,
+        extensionModeUiState = extensionModeUiState,
         quickSettingsIsOpen = quickSettingsIsOpen
     )
 }

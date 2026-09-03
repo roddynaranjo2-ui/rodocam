@@ -75,31 +75,15 @@ class SwitchCameraTest {
     }
 
     @Test
-    fun canFlipCamera_fromPreviewScreenDoubleTap() = runFlipCameraTest(composeTestRule) {
-        val lensFacingStates = mutableListOf<LensFacing>()
-        // Get initial lens facing
+    fun doubleTap_doesNotFlipCamera() = runFlipCameraTest(composeTestRule) {
+        // Double-tap on the viewfinder toggles 1x/2x zoom (Pixel-style gesture) and must
+        // never switch lenses; flipping is exclusively driven by the flip button.
         val initialLensFacing = composeTestRule.getCurrentLensFacing()
-        lensFacingStates.add(initialLensFacing)
 
-        // Double click display to flip camera
         composeTestRule.onNodeWithTag(PREVIEW_DISPLAY)
             .performTouchInput { doubleClick() }
 
-        // Get lens facing after first flip
-        lensFacingStates.add(composeTestRule.getCurrentLensFacing())
-
-        // Double click display to flip camera again
-        composeTestRule.onNodeWithTag(PREVIEW_DISPLAY)
-            .performTouchInput { doubleClick() }
-
-        // Get lens facing after second flip
-        lensFacingStates.add(composeTestRule.getCurrentLensFacing())
-
-        assertThat(lensFacingStates).containsExactly(
-            initialLensFacing,
-            initialLensFacing.flip(),
-            initialLensFacing.flip().flip()
-        ).inOrder()
+        assertThat(composeTestRule.getCurrentLensFacing()).isEqualTo(initialLensFacing)
     }
 }
 

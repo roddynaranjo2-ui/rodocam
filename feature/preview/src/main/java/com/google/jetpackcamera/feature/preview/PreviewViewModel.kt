@@ -46,12 +46,14 @@ import com.google.jetpackcamera.ui.components.capture.R
 import com.google.jetpackcamera.ui.controller.CameraController
 import com.google.jetpackcamera.ui.controller.CaptureController
 import com.google.jetpackcamera.ui.controller.ImageWellController
+import com.google.jetpackcamera.ui.controller.ManualControlsController
 import com.google.jetpackcamera.ui.controller.ScreenFlashController
 import com.google.jetpackcamera.ui.controller.SnackBarController
 import com.google.jetpackcamera.ui.controller.ZoomController
 import com.google.jetpackcamera.ui.controller.impl.CameraControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.CaptureControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.ImageWellControllerImpl
+import com.google.jetpackcamera.ui.controller.impl.ManualControlsControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.QuickSettingsControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.ScreenFlashControllerImpl
 import com.google.jetpackcamera.ui.controller.impl.SnackBarControllerImpl
@@ -120,7 +122,9 @@ class PreviewViewModel @Inject constructor(
 
     private val debugSettings: DebugSettings = savedStateHandle.getDebugSettings()
 
-    private var cameraPropertiesJSON = ""
+    // Populated asynchronously once the camera system finishes initializing; exposed as a flow so
+    // the debug overlay updates instead of capturing the initial empty string forever.
+    private val cameraPropertiesJSON = MutableStateFlow("")
 
     val screenFlashController: ScreenFlashController = ScreenFlashControllerImpl(
         cameraSystem = cameraSystemRepository.cameraSystem,
@@ -135,7 +139,7 @@ class PreviewViewModel @Inject constructor(
             cameraAppSettings = settingsRepository.defaultCameraAppSettings.first()
                 .applyExternalCaptureMode(externalCaptureMode)
                 .copy(debugSettings = debugSettings)
-        ) { cameraPropertiesJSON = it }
+        ) { cameraPropertiesJSON.value = it }
     }
 
     val captureUiState: StateFlow<CaptureUiState> = captureUiState(
@@ -153,7 +157,7 @@ class PreviewViewModel @Inject constructor(
         cameraSystemRepository.cameraSystem,
         constraintsRepository,
         debugSettings,
-        cameraPropertiesJSON,
+        cameraPropertiesJSON.asStateFlow(),
         trackedCaptureUiState
     )
         .stateIn(
@@ -168,7 +172,8 @@ class PreviewViewModel @Inject constructor(
     val quickSettingsController: QuickSettingsController = QuickSettingsControllerImpl(
         trackedCaptureUiState = trackedCaptureUiState,
         cameraSystem = cameraSystemRepository.cameraSystem,
-        coroutineContext = viewModelScope.coroutineContext
+        coroutineContext = viewModelScope.coroutineContext,
+        onExtensionModePersist = settingsRepository::updateExtensionMode
     )
 
     /**
@@ -195,6 +200,16 @@ class PreviewViewModel @Inject constructor(
         trackedCaptureUiState = trackedCaptureUiState
     )
 
+    /**
+     * Controller for the Pro (manual) camera controls panel.
+     */
+    val manualControlsController: ManualControlsController = ManualControlsControllerImpl(
+        cameraSystem = cameraSystemRepository.cameraSystem,
+        trackedCaptureUiState = trackedCaptureUiState,
+        coroutineContext = viewModelScope.coroutineContext,
+        onProModeEnabledPersist = settingsRepository::updateProModeEnabled
+    )
+
     val imageWellController: ImageWellController = ImageWellControllerImpl(
         mediaRepository = mediaRepository,
         updateLastCapturedMediaCallback = {
@@ -211,7 +226,18 @@ class PreviewViewModel @Inject constructor(
         initializationDeferred = initializationDeferred,
         captureUiState = captureUiState,
         coroutineContext = viewModelScope.coroutineContext,
-        cameraSystem = cameraSystemRepository.cameraSystem
+        cameraSystem = cameraSystemRepository.cameraSystem,
+        onCameraError = { throwable ->
+            Log.e(TAG, "Camera session error", throwable)
+            val cookieInt = snackBarController.incrementAndGetSnackBarCount()
+            snackBarController.addSnackBarData(
+                SnackbarData(
+                    cookie = "CameraError-$cookieInt",
+                    stringResource = R.string.camera_session_error_toast_message,
+                    withDismissAction = true
+                )
+            )
+        }
     )
 
     val captureController: CaptureController = CaptureControllerImpl(
@@ -332,7 +358,6 @@ class PreviewViewModel @Inject constructor(
             val prefix = when (event) {
                 is ImageCaptureEvent -> "Image"
                 is VideoCaptureEvent -> "Video"
-                else -> "Capture"
             }
             snackBarController.addSnackBarData(
                 SnackbarData(

@@ -20,6 +20,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
@@ -74,6 +75,9 @@ class PrefsDataStoreSettingsDataSource(
             audioEnabled = prefs[PreferenceKeys.KEY_AUDIO_ENABLED] ?: true,
             concurrentCameraMode = prefs[PreferenceKeys.KEY_CONCURRENT_CAMERA_MODE]
                 .toEnumOrDefault(ConcurrentCameraMode.OFF),
+            isProModeEnabled = prefs[PreferenceKeys.KEY_PRO_MODE_ENABLED] ?: false,
+            extensionMode = prefs[PreferenceKeys.KEY_EXTENSION_MODE]
+                .toEnumOrDefault(CameraExtensionMode.NONE),
             captureMode = defaultCaptureModeOverride
         )
     }
@@ -162,6 +166,18 @@ class PrefsDataStoreSettingsDataSource(
     override suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {
         dataStore.edit { prefs ->
             prefs[PreferenceKeys.KEY_CONCURRENT_CAMERA_MODE] = concurrentCameraMode.name
+        }
+    }
+
+    override suspend fun updateProModeEnabled(isProModeEnabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[PreferenceKeys.KEY_PRO_MODE_ENABLED] = isProModeEnabled
+        }
+    }
+
+    override suspend fun updateExtensionMode(extensionMode: CameraExtensionMode) {
+        dataStore.edit { prefs ->
+            prefs[PreferenceKeys.KEY_EXTENSION_MODE] = extensionMode.name
         }
     }
 

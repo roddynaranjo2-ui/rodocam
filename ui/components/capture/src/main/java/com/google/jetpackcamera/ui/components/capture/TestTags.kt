@@ -28,6 +28,7 @@ const val PREVIEW_DISPLAY = "PreviewDisplay"
 const val SCREEN_FLASH_OVERLAY = "ScreenFlashOverlay"
 const val AUDIO_INPUT_TOGGLE = "AudioInputToggle"
 const val FOCUS_METERING_INDICATOR_TAG = "FocusMeteringIndicatorTag"
+const val FOCUS_LOCK_BADGE_TAG = "FocusLockBadgeTag"
 
 enum class AudioInputState {
     OFF,
@@ -43,6 +44,19 @@ const val ZOOM_BUTTON_MIN_TAG = "ZoomButtonMinTag"
 const val ZOOM_BUTTON_1_TAG = "ZoomButton1Tag"
 const val ZOOM_BUTTON_2_TAG = "ZoomButton2Tag"
 const val ZOOM_BUTTON_5_TAG = "ZoomButton5Tag"
+
+/**
+ * Builds a deterministic test tag for zoom levels that don't have a dedicated constant
+ * (e.g. 3x optical telephoto, 10x). `3.0f` -> "ZoomButton3Tag", `0.6f` -> "ZoomButton0_6Tag".
+ */
+fun zoomButtonTestTagFor(zoomRatio: Float): String {
+    val normalized = if (zoomRatio == zoomRatio.toInt().toFloat()) {
+        zoomRatio.toInt().toString()
+    } else {
+        zoomRatio.toString().replace('.', '_')
+    }
+    return "ZoomButton${normalized}Tag"
+}
 
 // debug component tags
 
@@ -77,7 +91,35 @@ const val BTN_QUICK_SETTINGS_FLASH_OPTION_LOW_LIGHT_BOOST =
 const val BTN_QUICK_SETTINGS_HDR_OPTION_ON = "btn_quick_settings_hdr_option_on"
 const val BTN_QUICK_SETTINGS_HDR_OPTION_OFF = "btn_quick_settings_hdr_option_off"
 
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_OFF = "btn_quick_settings_extension_option_off"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_NIGHT = "btn_quick_settings_extension_option_night"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_BOKEH = "btn_quick_settings_extension_option_bokeh"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_HDR = "btn_quick_settings_extension_option_hdr"
+const val BTN_QUICK_SETTINGS_EXTENSION_OPTION_FACE_RETOUCH =
+    "btn_quick_settings_extension_option_face_retouch"
+
 const val ROW_QUICK_SETTINGS_CAPTURE_MODE = "row_quick_settings_capture_mode"
 const val ROW_QUICK_SETTINGS_HDR = "row_quick_settings_hdr"
+const val ROW_QUICK_SETTINGS_EXTENSION_MODE = "row_quick_settings_extension_mode"
 const val ROW_QUICK_SETTINGS_ASPECT_RATIO = "row_quick_settings_aspect_ratio"
 const val ROW_QUICK_SETTINGS_FLASH = "row_quick_settings_flash"
+
+// Pro (manual) controls
+const val PRO_MODE_TOGGLE_TAG = "pro_mode_toggle_tag"
+const val PRO_PANEL_TAG = "pro_panel_tag"
+const val PRO_CHIP_ISO_TAG = "pro_chip_iso_tag"
+const val PRO_CHIP_SHUTTER_TAG = "pro_chip_shutter_tag"
+const val PRO_CHIP_EV_TAG = "pro_chip_ev_tag"
+const val PRO_CHIP_WB_TAG = "pro_chip_wb_tag"
+const val PRO_CHIP_FOCUS_TAG = "pro_chip_focus_tag"
+const val PRO_CHIP_AE_LOCK_TAG = "pro_chip_ae_lock_tag"
+const val PRO_RESET_TAG = "pro_reset_tag"
+const val PRO_SLIDER_ISO_TAG = "pro_slider_iso_tag"
+const val PRO_SLIDER_SHUTTER_TAG = "pro_slider_shutter_tag"
+const val PRO_SLIDER_EV_TAG = "pro_slider_ev_tag"
+const val PRO_SLIDER_FOCUS_TAG = "pro_slider_focus_tag"
+const val PRO_WB_CHIP_PREFIX = "pro_wb_chip_"
+const val PRO_CHIP_SHADOWS_TAG = "pro_chip_shadows_tag"
+const val PRO_SLIDER_SHADOWS_TAG = "pro_slider_shadows_tag"
+const val PRO_CHIP_WB_KELVIN_TAG = "pro_chip_wb_kelvin_tag"
+const val PRO_SLIDER_WB_KELVIN_TAG = "pro_slider_wb_kelvin_tag"

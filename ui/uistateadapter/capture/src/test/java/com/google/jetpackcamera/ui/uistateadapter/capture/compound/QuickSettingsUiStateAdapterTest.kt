@@ -16,8 +16,10 @@
 package com.google.jetpackcamera.ui.uistateadapter.capture.compound
 
 import com.google.common.truth.Truth.assertThat
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
@@ -36,6 +38,10 @@ internal class QuickSettingsUiStateAdapterTest {
         val flipLensUiState = FlipLensUiState.Unavailable
         val aspectRatioUiState = AspectRatioUiState.Unavailable
         val hdrUiState = HdrUiState.Unavailable
+        val extensionModeUiState = ExtensionModeUiState.Available(
+            selectedMode = CameraExtensionMode.NIGHT,
+            availableModes = listOf(CameraExtensionMode.NIGHT)
+        )
         val quickSettingsIsOpen = true
 
         val quickSettingsUiState = QuickSettingsUiState.from(
@@ -44,7 +50,8 @@ internal class QuickSettingsUiStateAdapterTest {
             flipLensUiState = flipLensUiState,
             aspectRatioUiState = aspectRatioUiState,
             hdrUiState = hdrUiState,
-            quickSettingsIsOpen = quickSettingsIsOpen
+            quickSettingsIsOpen = quickSettingsIsOpen,
+            extensionModeUiState = extensionModeUiState
         )
 
         assertThat(quickSettingsUiState).isInstanceOf(QuickSettingsUiState.Available::class.java)
@@ -54,6 +61,7 @@ internal class QuickSettingsUiStateAdapterTest {
         assertThat(availableState.flipLensUiState).isEqualTo(flipLensUiState)
         assertThat(availableState.aspectRatioUiState).isEqualTo(aspectRatioUiState)
         assertThat(availableState.hdrUiState).isEqualTo(hdrUiState)
+        assertThat(availableState.extensionModeUiState).isEqualTo(extensionModeUiState)
         assertThat(availableState.quickSettingsIsOpen).isEqualTo(quickSettingsIsOpen)
     }
 }

@@ -30,6 +30,7 @@ import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraXConfig
 import androidx.camera.core.DynamicRange as CXDynamicRange
 import androidx.camera.core.ImageCapture
+import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.core.ImageCapture.OutputFileOptions
 import androidx.camera.core.SurfaceRequest
 import androidx.camera.core.takePicture
@@ -50,9 +51,12 @@ import com.google.jetpackcamera.core.common.FilePathGenerator
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraEffectTarget
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
+import com.google.jetpackcamera.model.DNG_FILE_EXTENSION
+import com.google.jetpackcamera.model.DNG_MIME_TYPE
 import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
@@ -63,9 +67,12 @@ import com.google.jetpackcamera.model.LensToZoom
 import com.google.jetpackcamera.model.LowLightBoostAvailability
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.LowLightBoostState
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
+import com.google.jetpackcamera.model.TARGET_FPS_120
 import com.google.jetpackcamera.model.TARGET_FPS_15
+import com.google.jetpackcamera.model.TARGET_FPS_24
 import com.google.jetpackcamera.model.TARGET_FPS_30
 import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
@@ -81,6 +88,9 @@ import java.io.File
 import java.io.FileNotFoundException
 import javax.inject.Provider
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,12 +99,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "CameraXCameraSystem"
+
+/** Upper bound for waiting on AF/AE convergence before applying a long-press lock. */
+private const val LOCK_CONVERGENCE_TIMEOUT_MILLIS = 3_000L
 
 /**
  * CameraX based implementation for [CameraSystem]
@@ -113,11 +128,26 @@ class CameraXCameraSystem(
     private val cameraEffectProviders:
     Map<CameraEffectFeatureKey, @JvmSuppressWildcards Provider<CameraEffectProvider>>
 ) : CameraSystem {
-    private lateinit var cameraProvider: ProcessCameraProvider
+    /**
+     * Set once [initialize] succeeds. Kept nullable (instead of `lateinit`) so that any public
+     * method invoked before/without a successful initialization fails gracefully instead of
+     * throwing [UninitializedPropertyAccessException].
+     */
+    @Volatile
+    private var cameraProvider: ProcessCameraProvider? = null
+
+    /** Vendor extensions entry point; `null` when the device exposes none. Set in [initialize]. */
+    @Volatile
+    private var extensionsManager: ExtensionsManager? = null
 
     private var imageCaptureUseCase: ImageCapture? = null
 
-    private lateinit var systemConstraints: CameraSystemConstraints
+    /**
+     * Constraints discovered during [initialize]. Defaults to an empty set of constraints so all
+     * lookups (`perLensConstraints[...]`) safely resolve to `null` before initialization.
+     */
+    @Volatile
+    private var systemConstraints: CameraSystemConstraints = CameraSystemConstraints()
 
     private val screenFlashEvents: Channel<CameraSystem.ScreenFlashEvent> =
         Channel(capacity = Channel.UNLIMITED)
@@ -163,10 +193,13 @@ class CameraXCameraSystem(
         cameraPropertiesJSONCallback: (result: String) -> Unit
     ) {
         val debugSettings = cameraAppSettings.debugSettings
-        cameraProvider = configureAndGetCameraProvider(
+        val cameraProvider = configureAndGetCameraProvider(
             context = application,
             singleLensMode = debugSettings.singleLensMode
         )
+        this.cameraProvider = cameraProvider
+        val extensionsManager = getExtensionsManagerOrNull(application, cameraProvider)
+        this.extensionsManager = extensionsManager
 
         // updates values for available cameras
         val availableCameraLenses =
@@ -239,8 +272,8 @@ class CameraXCameraSystem(
                         val unsupportedStabilizationFpsMap = buildMap {
                             for (stabilizationMode in supportedStabilizationModes) {
                                 when (stabilizationMode) {
-                                    StabilizationMode.ON -> setOf(TARGET_FPS_15, TARGET_FPS_60)
-                                    StabilizationMode.HIGH_QUALITY -> setOf(TARGET_FPS_60)
+                                    StabilizationMode.ON -> setOf(TARGET_FPS_15, TARGET_FPS_60, TARGET_FPS_120)
+                                    StabilizationMode.HIGH_QUALITY -> setOf(TARGET_FPS_60, TARGET_FPS_120)
                                     StabilizationMode.OPTICAL -> emptySet()
                                     else -> null
                                 }?.let { put(stabilizationMode, it) }
@@ -262,6 +295,17 @@ class CameraXCameraSystem(
                         } else {
                             setOf(TestPattern.Off)
                         }
+
+                        val manualCapabilities = camInfo.manualCapabilities
+                        val physicalLenses = camInfo.physicalLenses(application)
+                        val supportedExtensionModes =
+                            extensionsManager?.supportedExtensionModes(selector) ?: emptySet()
+                        Log.d(
+                            TAG,
+                            "Lens $lensFacing: manual=$manualCapabilities lenses=" +
+                                physicalLenses.map { it.zoomRatio } +
+                                " extensions=$supportedExtensionModes"
+                        )
 
                         put(
                             lensFacing,
@@ -285,7 +329,10 @@ class CameraXCameraSystem(
                                 supportedFlashModes = supportedFlashModes,
                                 supportedZoomRange = supportedZoomRange,
                                 unsupportedStabilizationFpsMap = unsupportedStabilizationFpsMap,
-                                supportedTestPatterns = supportedTestPatterns
+                                supportedTestPatterns = supportedTestPatterns,
+                                manualCapabilities = manualCapabilities,
+                                physicalLenses = physicalLenses,
+                                supportedExtensionModes = supportedExtensionModes
                             )
                         )
                     }
@@ -307,6 +354,7 @@ class CameraXCameraSystem(
                 .tryApplyCaptureModeConstraints()
                 .tryApplyVideoQualityConstraints()
                 .tryApplyTestPatternConstraints()
+                .tryApplyExtensionModeConstraints()
         if (debugSettings.isDebugModeEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             withContext(iODispatcher) {
                 val cameraPropertiesJSON =
@@ -396,6 +444,10 @@ class CameraXCameraSystem(
     override suspend fun runCamera() = coroutineScope {
         Log.d(TAG, "runCamera")
 
+        val cameraProvider = checkNotNull(cameraProvider) {
+            "CameraXCameraSystem.runCamera() called before initialize() completed successfully."
+        }
+
         launch {
             handleLowLightBoostErrors()
         }
@@ -410,7 +462,13 @@ class CameraXCameraSystem(
                     flashMode = currentCameraSettings.flashMode,
                     primaryLensFacing = currentCameraSettings.cameraLensFacing,
                     zoomRatios = currentCameraSettings.defaultZoomRatios,
-                    testPattern = currentCameraSettings.debugSettings.testPattern
+                    testPattern = currentCameraSettings.debugSettings.testPattern,
+                    // Clamp to the active lens' capabilities so a value chosen on the rear lens
+                    // never produces an illegal request on the front lens.
+                    manualControls = systemConstraints.forCurrentLens(currentCameraSettings)
+                        ?.manualCapabilities
+                        ?.sanitize(currentCameraSettings.manualControls)
+                        ?: ManualControls.AUTO
                 )
 
                 when (currentCameraSettings.concurrentCameraMode) {
@@ -442,7 +500,8 @@ class CameraXCameraSystem(
                             dynamicRange = currentCameraSettings.dynamicRange,
                             videoQuality = currentCameraSettings.videoQuality,
                             imageFormat = currentCameraSettings.imageFormat,
-                            lowLightBoostPriority = currentCameraSettings.lowLightBoostPriority
+                            lowLightBoostPriority = currentCameraSettings.lowLightBoostPriority,
+                            extensionMode = currentCameraSettings.extensionMode
                         )
                     }
 
@@ -475,6 +534,14 @@ class CameraXCameraSystem(
             }.distinctUntilChanged()
             .collectLatest { sessionSettings ->
                 coroutineScope {
+                    // Snapshot the settings that produced this session. They are guaranteed
+                    // non-null here because the upstream flow is `filterNotNull()`.
+                    val sessionAppSettings = currentSettings.value
+                    if (sessionAppSettings == null) {
+                        Log.w(TAG, "Settings became null before session start; skipping session")
+                        return@coroutineScope
+                    }
+                    val lensConstraints = systemConstraints.forCurrentLens(sessionAppSettings)
                     with(
                         CameraSessionContext(
                             context = application,
@@ -488,14 +555,15 @@ class CameraXCameraSystem(
                             surfaceRequests = _surfaceRequest,
                             transientSettings = transientSettings,
                             lowLightBoostEffectProvider = lowLightBoostEffectProvider,
-                            cameraEffectProviders = cameraEffectProviders
+                            cameraEffectProviders = cameraEffectProviders,
+                            extensionsManager = extensionsManager
                         )
                     ) {
                         try {
                             when (sessionSettings) {
                                 is PerpetualSessionSettings.SingleCamera -> runSingleCameraSession(
                                     sessionSettings,
-                                    systemConstraints.forCurrentLens(currentSettings.value!!),
+                                    lensConstraints,
                                     onImageCaptureCreated = { imageCapture ->
                                         imageCaptureUseCase = imageCapture
                                     }
@@ -504,14 +572,19 @@ class CameraXCameraSystem(
                                 is PerpetualSessionSettings.ConcurrentCamera ->
                                     runConcurrentCameraSession(
                                         sessionSettings,
-                                        systemConstraints.forCurrentLens(currentSettings.value!!)
+                                        lensConstraints
                                     )
                             }
                         } finally {
-                            // TODO(tm): This shouldn't be necessary. Cancellation of the
-                            //  coroutineScope by collectLatest should cause this to
-                            //  occur naturally.
-                            cameraProvider.unbindAll()
+                            // The ImageCapture instance belongs to the session that is being torn
+                            // down. Clear it so takePicture() reports a recoverable error instead
+                            // of capturing on an unbound use case.
+                            imageCaptureUseCase = null
+                            // Use cases must be unbound from the main thread, and the cleanup must
+                            // run to completion even though this coroutine is being cancelled.
+                            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                                cameraProvider.unbindAll()
+                            }
                         }
                     }
                 }
@@ -551,11 +624,10 @@ class CameraXCameraSystem(
     }
 
     override suspend fun takePicture(onCaptureStarted: (() -> Unit)) {
-        if (imageCaptureUseCase == null) {
-            throw RuntimeException("Attempted take picture with null imageCapture use case")
-        }
+        val imageCapture = imageCaptureUseCase
+            ?: throw ImageCaptureUnavailableException()
         try {
-            val imageProxy = imageCaptureUseCase!!.takePicture(onCaptureStarted)
+            val imageProxy = imageCapture.takePicture(onCaptureStarted)
             Log.d(TAG, "onCaptureSuccess")
             imageProxy.close()
         } catch (exception: Exception) {
@@ -569,26 +641,24 @@ class CameraXCameraSystem(
         contentResolver: ContentResolver,
         saveLocation: SaveLocation,
         onCaptureStarted: (() -> Unit)
-    ): ImageCapture.OutputFileResults = imageCaptureUseCase?.let { imageCaptureUseCase ->
+    ): ImageCapture.OutputFileResults {
+        val imageCaptureUseCase = imageCaptureUseCase ?: throw ImageCaptureUnavailableException()
+        val imageFormat = currentSettings.value?.imageFormat ?: ImageOutputFormat.JPEG
+        // RAW is only produced when the bound use case was built for it *and* the destination is
+        // the public MediaStore (explicit URIs / cache files have a single output stream).
+        val captureRaw = imageFormat.producesRaw &&
+            imageCaptureUseCase.outputFormat == ImageCapture.OUTPUT_FORMAT_RAW_JPEG &&
+            saveLocation is SaveLocation.Default
+
+        // Shared base name so a RAW+JPEG pair is stored as IMG_x.jpg + IMG_x.dng (Pixel behaviour).
+        val baseName = filePathGenerator.generateImageFilename(fileExtension = null)
         val (outputFileOptions, closeable) = when (saveLocation) {
             is SaveLocation.Default -> {
-                val filename = filePathGenerator.generateImageFilename()
-                val contentValues = ContentValues()
-                contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                val relativePath = filePathGenerator.relativeImageOutputPath
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+
-                    contentValues.put(
-                        MediaStore.Images.Media.RELATIVE_PATH,
-                        relativePath
-                    )
-                }
-                val options = OutputFileOptions.Builder(
-                    contentResolver,
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    contentValues
-                ).build()
-                options to null
+                buildMediaStoreOutputOptions(
+                    contentResolver = contentResolver,
+                    displayName = baseName + imageFormat.fileExtension,
+                    mimeType = imageFormat.mimeType
+                ) to null
             }
 
             is SaveLocation.Explicit -> {
@@ -619,28 +689,69 @@ class CameraXCameraSystem(
                 // 3. Build OutputFileOptions directly with the File object
                 val options = OutputFileOptions.Builder(tempFile).build()
 
-                // 4. Return options. Since CameraX manages the stream, we return null for the 'closeable'.
+                // 4. Return options. CameraX manages the stream, so there is nothing to close.
                 options to null
             }
         }
 
-        try {
-            imageCaptureUseCase.takePicture(
-                outputFileOptions,
-                onCaptureStarted
-            )
+        val results = try {
+            if (captureRaw) {
+                val rawOptions = buildMediaStoreOutputOptions(
+                    contentResolver = contentResolver,
+                    displayName = baseName + DNG_FILE_EXTENSION,
+                    mimeType = DNG_MIME_TYPE
+                )
+                val dual = imageCaptureUseCase.takeRawJpegPicture(
+                    rawOutputFileOptions = rawOptions,
+                    jpegOutputFileOptions = outputFileOptions,
+                    executor = defaultDispatcher.asExecutor(),
+                    onCaptureStarted = onCaptureStarted
+                )
+                dual.raw?.savedUri?.let { Log.d(TAG, "Saved DNG to $it") }
+                dual.jpeg
+            } else {
+                imageCaptureUseCase.takePicture(outputFileOptions, onCaptureStarted)
+            }
         } finally {
             closeable?.close()
-        }.also { outputFileResults ->
-            outputFileResults.savedUri?.let {
+        }
+
+        results.savedUri?.let { savedUri ->
+            // Post-processing (Ultra HDR gain map handling, HEIC transcode, ...) can be CPU heavy.
+            // Run it on the background dispatcher so the CameraX capture executor is free to
+            // start the next capture immediately.
+            withContext(defaultDispatcher) {
                 for ((key, value) in imagePostProcessors) {
-                    value.get().postProcessImage(it)
+                    value.get().postProcessImage(savedUri)
                     Log.d(TAG, "Post processed image with $key")
                 }
-                Log.d(TAG, "Saved image to $it")
+            }
+            Log.d(TAG, "Saved image to $savedUri")
+        }
+        return results
+    }
+
+    private fun buildMediaStoreOutputOptions(
+        contentResolver: ContentResolver,
+        displayName: String,
+        mimeType: String
+    ): OutputFileOptions {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+
+                put(
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    filePathGenerator.relativeImageOutputPath
+                )
             }
         }
-    } ?: throw RuntimeException("Attempted take picture with null imageCapture use case")
+        return OutputFileOptions.Builder(
+            contentResolver,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            contentValues
+        ).build()
+    }
 
     override suspend fun startVideoRecording(
         saveLocation: SaveLocation,
@@ -680,6 +791,26 @@ class CameraXCameraSystem(
         }
     }
 
+    override fun setManualControls(manualControls: ManualControls) {
+        currentSettings.update { old ->
+            // Vendor extensions own exposure/processing; manual controls are not applicable.
+            if (old?.extensionMode?.isEnabled == true) {
+                old
+            } else {
+                old?.copy(manualControls = manualControls)
+            }
+        }
+    }
+
+    override suspend fun setProModeEnabled(enabled: Boolean) {
+        currentSettings.update { old ->
+            old?.copy(
+                isProModeEnabled = enabled,
+                manualControls = if (enabled) old.manualControls else ManualControls.AUTO
+            )
+        }
+    }
+
     // Sets the camera to the designated lensFacing direction
     override suspend fun setLensFacing(lensFacing: LensFacing) {
         // TODO: Handle lens flipping during recording when only one lens supports HDR.
@@ -688,6 +819,7 @@ class CameraXCameraSystem(
         currentSettings.update { old ->
             if (systemConstraints.availableLenses.contains(lensFacing)) {
                 old?.copy(cameraLensFacing = lensFacing)
+                    ?.tryApplyExtensionModeConstraints()
                     ?.tryApplyDynamicRangeConstraints()
                     ?.tryApplyImageFormatConstraints()
                     ?.tryApplyFlashModeConstraints()
@@ -699,8 +831,53 @@ class CameraXCameraSystem(
         }
     }
 
+    override suspend fun setExtensionMode(extensionMode: CameraExtensionMode) {
+        currentSettings.update { old ->
+            old?.copy(extensionMode = extensionMode)
+                ?.tryApplyExtensionModeConstraints()
+                ?.tryApplyImageFormatConstraints()
+                ?.tryApplyCaptureModeConstraints()
+        }
+    }
+
     private fun CameraAppSettings.isSingleStreamLayout(): Boolean {
         return cameraEffectProviders.keys.any { it.id == selectedCameraEffect }
+    }
+
+    /**
+     * Drops the vendor extension when the active lens cannot bind it, when a concurrent (dual)
+     * session is running, or when the app is in video-only mode (extensions are still-image
+     * pipelines). With an extension active the vendor owns exposure and processing, so manual
+     * controls are reset and the output falls back to a plain JPEG.
+     */
+    private fun CameraAppSettings.tryApplyExtensionModeConstraints(): CameraAppSettings {
+        if (!extensionMode.isEnabled) return this
+        val supported = systemConstraints.perLensConstraints[cameraLensFacing]
+            ?.supportedExtensionModes ?: emptySet()
+        val allowed = extensionMode in supported &&
+            concurrentCameraMode == ConcurrentCameraMode.OFF &&
+            captureMode != CaptureMode.VIDEO_ONLY &&
+            flashMode != FlashMode.LOW_LIGHT_BOOST
+        return if (allowed) {
+            copy(
+                manualControls = ManualControls.AUTO,
+                imageFormat = ImageOutputFormat.JPEG,
+                dynamicRange = DynamicRange.SDR
+            )
+        } else {
+            Log.d(TAG, "Extension $extensionMode not applicable; falling back to NONE")
+            copy(extensionMode = CameraExtensionMode.NONE)
+        }
+    }
+
+    /**
+     * Turns the vendor extension off when the user explicitly picks a feature that cannot run
+     * inside an extension session (HDR / Ultra HDR / RAW output). The user's newest choice wins.
+     */
+    private fun CameraAppSettings.dropExtensionIfConflicting(): CameraAppSettings {
+        if (!extensionMode.isEnabled) return this
+        val conflicts = dynamicRange != DynamicRange.SDR || imageFormat != ImageOutputFormat.JPEG
+        return if (conflicts) copy(extensionMode = CameraExtensionMode.NONE) else this
     }
 
     /**
@@ -927,7 +1104,54 @@ class CameraXCameraSystem(
         } ?: this
 
     override suspend fun tapToFocus(x: Float, y: Float) {
+        // A plain tap releases any previous long-press AE/AF lock, like on Pixel.
+        setViewfinderLocks(locked = false)
         focusMeteringEvents.send(CameraEvent.FocusMeteringEvent(x, y))
+    }
+
+    override suspend fun lockFocusAndExposure(x: Float, y: Float) {
+        focusMeteringEvents.send(CameraEvent.FocusMeteringEvent(x, y, lock = true))
+        // Like Pixel, freeze AE/AWB only once metering has converged on the pressed point. If the
+        // user taps elsewhere in the meantime the focus state is replaced (isLocked = false) and
+        // the lock is never applied. Times out silently when no session is processing events.
+        val focusStates = currentCameraState.map { it.focusState }
+        val converged = withTimeoutOrNull(LOCK_CONVERGENCE_TIMEOUT_MILLIS) {
+            // Phase 1: the session picked up our lock request.
+            focusStates.first { it.isLockRequestAt(x, y) }
+            // Phase 2: metering finished, or a newer request replaced ours.
+            focusStates.first { !it.isRunningLockRequestAt(x, y) }
+        }
+        if (converged?.isLockRequestAt(x, y) == true) {
+            setViewfinderLocks(locked = true)
+        }
+    }
+
+    private fun FocusState.isLockRequestAt(x: Float, y: Float): Boolean =
+        this is FocusState.Specified && isLocked && this.x == x && this.y == y
+
+    private fun FocusState.isRunningLockRequestAt(x: Float, y: Float): Boolean =
+        this is FocusState.Specified &&
+            isLocked &&
+            this.x == x &&
+            this.y == y &&
+            status == FocusState.Status.RUNNING
+
+    /**
+     * Mirrors the long-press AE/AF lock into [ManualControls.aeLock]/[ManualControls.awbLock] so
+     * that exposure and white balance are frozen through the same Camera2 path the Pro panel uses
+     * (and the Pro "AE" chip reflects the lock). Unsupported locks are dropped by `sanitize`.
+     */
+    private fun setViewfinderLocks(locked: Boolean) {
+        currentSettings.update { old ->
+            val controls = old?.manualControls ?: return@update old
+            if (controls.aeLock == locked && controls.awbLock == locked) {
+                old
+            } else if (old.extensionMode.isEnabled) {
+                old
+            } else {
+                old.copy(manualControls = controls.copy(aeLock = locked, awbLock = locked))
+            }
+        }
     }
 
     override fun getScreenFlashEvents() = screenFlashEvents
@@ -936,6 +1160,7 @@ class CameraXCameraSystem(
     override fun setFlashMode(flashMode: FlashMode) {
         currentSettings.update { old ->
             old?.copy(flashMode = flashMode)
+                ?.tryApplyExtensionModeConstraints()
                 ?.tryApplyDynamicRangeConstraints()
                 ?.tryApplyImageFormatConstraints()
                 ?.tryApplyConcurrentCameraModeConstraints()
@@ -978,6 +1203,7 @@ class CameraXCameraSystem(
     override suspend fun setDynamicRange(dynamicRange: DynamicRange) {
         currentSettings.update { old ->
             old?.copy(dynamicRange = dynamicRange)
+                ?.dropExtensionIfConflicting()
                 ?.tryApplyDynamicRangeConstraints()
                 ?.tryApplyConcurrentCameraModeConstraints()
                 ?.tryApplyCaptureModeConstraints()
@@ -993,6 +1219,7 @@ class CameraXCameraSystem(
     override suspend fun setConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {
         currentSettings.update { old ->
             old?.copy(concurrentCameraMode = concurrentCameraMode)
+                ?.tryApplyExtensionModeConstraints()
                 ?.tryApplyConcurrentCameraModeConstraints()
                 ?.tryApplyCaptureModeConstraints()
         }
@@ -1001,6 +1228,7 @@ class CameraXCameraSystem(
     override suspend fun setImageFormat(imageFormat: ImageOutputFormat) {
         currentSettings.update { old ->
             old?.copy(imageFormat = imageFormat)
+                ?.dropExtensionIfConflicting()
                 ?.tryApplyImageFormatConstraints()
                 ?.tryApplyCaptureModeConstraints()
         }
@@ -1036,6 +1264,7 @@ class CameraXCameraSystem(
     override suspend fun setCaptureMode(captureMode: CaptureMode) {
         currentSettings.update { old ->
             old?.copy(captureMode = captureMode)
+                ?.tryApplyExtensionModeConstraints()
                 ?.tryApplyDynamicRangeConstraints()
                 ?.tryApplyAspectRatioForExternalCapture(captureMode)
                 ?.tryApplyImageFormatConstraints()
@@ -1075,6 +1304,6 @@ class CameraXCameraSystem(
             return ProcessCameraProvider.awaitInstance(context)
         }
 
-        private val FIXED_FRAME_RATES = setOf(TARGET_FPS_15, TARGET_FPS_30, TARGET_FPS_60)
+        private val FIXED_FRAME_RATES = setOf(TARGET_FPS_15, TARGET_FPS_24, TARGET_FPS_30, TARGET_FPS_60, TARGET_FPS_120)
     }
 }

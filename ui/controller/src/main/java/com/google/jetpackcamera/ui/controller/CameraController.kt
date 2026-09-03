@@ -40,6 +40,15 @@ interface CameraController {
     fun tapToFocus(x: Float, y: Float)
 
     /**
+     * Locks focus and exposure at the given coordinates on the preview surface (long-press on
+     * the viewfinder, like Pixel's AE/AF lock). Released by the next [tapToFocus].
+     *
+     * @param x The x-coordinate of the press.
+     * @param y The y-coordinate of the press.
+     */
+    fun lockFocusAndExposure(x: Float, y: Float)
+
+    /**
      * Informs the camera system of the current device display rotation.
      *
      * @param deviceRotation The device rotation to set.

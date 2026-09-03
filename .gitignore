@@ -42,3 +42,6 @@ reports/
 *.swp
 *.swo
 *~
+
+# Local release signing (see app/build.gradle.kts)
+keystore.properties

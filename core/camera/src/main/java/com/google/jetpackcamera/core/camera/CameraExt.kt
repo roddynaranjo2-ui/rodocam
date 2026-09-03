@@ -19,6 +19,8 @@ import android.content.Context
 import android.graphics.Rect
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraMetadata
+import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.os.Build
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -105,9 +107,20 @@ fun Int.toAppImageFormat(): ImageOutputFormat? {
     return when (this) {
         ImageCapture.OUTPUT_FORMAT_JPEG -> ImageOutputFormat.JPEG
         ImageCapture.OUTPUT_FORMAT_JPEG_ULTRA_HDR -> ImageOutputFormat.JPEG_ULTRA_HDR
-        // All other output formats unsupported. Return null.
+        ImageCapture.OUTPUT_FORMAT_RAW_JPEG -> ImageOutputFormat.RAW_JPEG
+        // RAW-only is intentionally not exposed: the app always wants a developed JPEG so the
+        // image well / post-capture / share flow keep working. Return null.
         else -> null
     }
+}
+
+/** The CameraX `ImageCapture` output format constant used to build the use case for this format. */
+fun ImageOutputFormat.toCameraXOutputFormat(): Int = when (this) {
+    ImageOutputFormat.JPEG -> ImageCapture.OUTPUT_FORMAT_JPEG
+    ImageOutputFormat.JPEG_ULTRA_HDR -> ImageCapture.OUTPUT_FORMAT_JPEG_ULTRA_HDR
+    ImageOutputFormat.RAW_JPEG -> ImageCapture.OUTPUT_FORMAT_RAW_JPEG
+    // HEIC is produced by transcoding the HAL JPEG, so the use case itself is plain JPEG.
+    ImageOutputFormat.HEIC -> ImageCapture.OUTPUT_FORMAT_JPEG
 }
 
 fun VideoQuality.toQuality(): Quality? {
@@ -219,10 +232,37 @@ fun CameraInfo.filterSupportedFixedFrameRates(desired: Set<Int>): Set<Int> {
     }
 }
 
+/**
+ * Image output formats this camera can produce, expressed in app terms.
+ *
+ * CameraX reports the HAL formats (JPEG, Ultra HDR, RAW+JPEG). HEIC is added on top whenever the
+ * device ships an HEVC image encoder (API 28+), because it is derived from the JPEG stream via
+ * post-processing rather than from the HAL.
+ */
 val CameraInfo.supportedImageFormats: Set<ImageOutputFormat>
-    get() = ImageCapture.getImageCaptureCapabilities(this).supportedOutputFormats
-        .mapNotNull(Int::toAppImageFormat)
-        .toSet()
+    get() = buildSet {
+        ImageCapture.getImageCaptureCapabilities(this@supportedImageFormats)
+            .supportedOutputFormats
+            .mapNotNullTo(this, Int::toAppImageFormat)
+        if (isHeicEncodingSupported()) add(ImageOutputFormat.HEIC)
+    }
+
+/**
+ * Whether the device can encode HEIC stills: requires API 28+ (`HeifWriter`) and a hardware or
+ * software HEVC video encoder registered in [MediaCodecList].
+ */
+fun isHeicEncodingSupported(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+    return try {
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any {
+            it.isEncoder && it.supportedTypes.any { type ->
+                type.equals(MediaFormat.MIMETYPE_VIDEO_HEVC, ignoreCase = true)
+            }
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
 
 fun UseCaseGroup.getVideoCapture() = getUseCaseOrNull<VideoCapture<Recorder>>()
 fun UseCaseGroup.getImageCapture() = getUseCaseOrNull<ImageCapture>()

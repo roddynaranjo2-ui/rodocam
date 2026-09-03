@@ -17,6 +17,7 @@ package com.google.jetpackcamera.settings
 
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -65,4 +66,8 @@ interface SettingsRepository {
     suspend fun updateAudioEnabled(isAudioEnabled: Boolean)
 
     suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode)
+
+    suspend fun updateProModeEnabled(isProModeEnabled: Boolean)
+
+    suspend fun updateExtensionMode(extensionMode: CameraExtensionMode)
 }

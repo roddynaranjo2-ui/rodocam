@@ -17,6 +17,7 @@ package com.google.jetpackcamera.settings.model
 
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
@@ -29,6 +30,7 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.NONE_EFFECT_ID
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
@@ -56,7 +58,19 @@ data class CameraAppSettings(
     val concurrentCameraMode: ConcurrentCameraMode = ConcurrentCameraMode.OFF,
     val maxVideoDurationMillis: Long = UNLIMITED_VIDEO_DURATION,
     val lowLightBoostPriority: LowLightBoostPriority = LowLightBoostPriority.PRIORITIZE_AE_MODE,
-    val debugSettings: DebugSettings = DebugSettings()
+    val debugSettings: DebugSettings = DebugSettings(),
+    /**
+     * Pro/manual controls (ISO, shutter, EV, WB, focus, AE/AWB lock). Session-scoped: not
+     * persisted across app launches, mirroring Pixel Camera which resets Pro controls on relaunch.
+     */
+    val manualControls: ManualControls = ManualControls.AUTO,
+    /** Whether the Pro controls panel is enabled in the viewfinder (persisted user preference). */
+    val isProModeEnabled: Boolean = false,
+    /**
+     * Vendor extension (Night, Portrait/Bokeh, HDR, Face retouch) bound to the session. Persisted
+     * so the user returns to the mode they last used, like Pixel Camera remembers Night Sight.
+     */
+    val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE
 )
 
 fun CameraSystemConstraints.forCurrentLens(

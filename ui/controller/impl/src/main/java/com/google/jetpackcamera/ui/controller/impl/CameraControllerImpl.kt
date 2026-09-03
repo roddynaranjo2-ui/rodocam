@@ -24,76 +24,131 @@ import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.ui.controller.CameraController
 import com.google.jetpackcamera.ui.uistate.capture.compound.CaptureUiState
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private const val TAG = "CameraControllerImpl"
 
 /**
  * Implementation of [CameraController] that manages the camera lifecycle.
  *
+ * Start/stop requests are serialized through a [Mutex] and the previous session is always
+ * cancelled **and joined** before a new one is started. This guarantees that the previous
+ * session's `unbindAll()` cleanup has fully completed before the new session calls
+ * `bindToLifecycle`, avoiding the race where a stale cleanup unbinds the freshly bound
+ * use cases (black viewfinder after rotation / returning from Settings).
+ *
+ * Any failure while initializing or running the camera (e.g. `IllegalArgumentException` from an
+ * unsupported surface combination on LIMITED devices, `CameraUnavailableException`, HAL errors)
+ * is caught and reported through [onCameraError] instead of crashing the process.
+ *
  * @param initializationDeferred A [Deferred] that completes when the camera system is initialized.
  * @param captureUiState The [StateFlow] of the capture UI state.
+ * @param cameraSystem The [CameraSystem] to interact with.
  * @param coroutineContext The [CoroutineContext] for launching coroutines.
- * @param cameraSystem The [com.google.jetpackcamera.core.camera.CameraSystem] to interact with.
+ * @param onCameraError Callback invoked (from a coroutine in this controller's scope) when the
+ * camera could not be initialized or its session failed unexpectedly.
  */
 class CameraControllerImpl(
     private val initializationDeferred: Deferred<Unit>,
     private val captureUiState: StateFlow<CaptureUiState>,
     private val cameraSystem: CameraSystem,
-    coroutineContext: CoroutineContext
+    coroutineContext: CoroutineContext,
+    private val onCameraError: (Throwable) -> Unit = { throwable ->
+        Log.e(TAG, "Unhandled camera error", throwable)
+    }
 ) : CameraController {
     private var runningCameraJob: Job? = null
+    private val lifecycleMutex = Mutex()
     private val job = Job(parent = coroutineContext[Job])
     private val scope = CoroutineScope(coroutineContext + job)
+
     override fun startCamera() {
         Log.d(TAG, "startCamera")
-        stopCamera()
-        runningCameraJob = scope.launch {
-            if (Trace.isEnabled()) {
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    val startTraceTimestamp: Long = SystemClock.elapsedRealtimeNanos()
-                    traceFirstFramePreview(cookie = 1) {
-                        captureUiState.transformWhile {
-                            var continueCollecting = true
-                            (it as? CaptureUiState.Ready)?.let { uiState ->
-                                if (uiState.sessionFirstFrameTimestamp > startTraceTimestamp) {
-                                    emit(Unit)
-                                    continueCollecting = false
-                                }
+        scope.launch {
+            lifecycleMutex.withLock {
+                // Make sure the previous session has completely torn down before starting a
+                // new one. cancelAndJoin() (instead of cancel()) is what prevents the double-bind
+                // race described in the class docs.
+                runningCameraJob?.cancelAndJoin()
+                runningCameraJob = launchCameraSession()
+            }
+        }
+    }
+
+    private fun CoroutineScope.launchCameraSession(): Job = launch {
+        if (Trace.isEnabled()) {
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                val startTraceTimestamp: Long = SystemClock.elapsedRealtimeNanos()
+                traceFirstFramePreview(cookie = 1) {
+                    captureUiState.transformWhile {
+                        var continueCollecting = true
+                        (it as? CaptureUiState.Ready)?.let { uiState ->
+                            if (uiState.sessionFirstFrameTimestamp > startTraceTimestamp) {
+                                emit(Unit)
+                                continueCollecting = false
                             }
-                            continueCollecting
-                        }.collect {}
-                    }
+                        }
+                        continueCollecting
+                    }.collect {}
                 }
             }
+        }
+        try {
             // Ensure CameraSystem is initialized before starting camera
             initializationDeferred.await()
-            // TODO(yasith): Handle Exceptions from binding use cases
             cameraSystem.runCamera()
+        } catch (e: CancellationException) {
+            // Normal teardown (stopCamera / scope cancellation). Never swallow cancellation.
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Camera session failed", e)
+            onCameraError(e)
         }
     }
 
     override fun stopCamera() {
         Log.d(TAG, "stopCamera")
-        runningCameraJob?.apply {
-            if (isActive) {
-                cancel()
+        scope.launch {
+            lifecycleMutex.withLock {
+                runningCameraJob?.cancelAndJoin()
+                runningCameraJob = null
             }
         }
     }
 
     override fun tapToFocus(x: Float, y: Float) {
         Log.d(TAG, "tapToFocus")
+        launchFocusAction("tapToFocus") { cameraSystem.tapToFocus(x, y) }
+    }
+
+    override fun lockFocusAndExposure(x: Float, y: Float) {
+        Log.d(TAG, "lockFocusAndExposure")
+        launchFocusAction("lockFocusAndExposure") { cameraSystem.lockFocusAndExposure(x, y) }
+    }
+
+    private fun launchFocusAction(name: String, action: suspend () -> Unit) {
         scope.launch {
-            cameraSystem.tapToFocus(x, y)
+            try {
+                action()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Focus/metering can legitimately fail (camera closing, unsupported region).
+                // It must never take the whole viewfinder down.
+                Log.w(TAG, "$name failed", e)
+            }
         }
     }
 

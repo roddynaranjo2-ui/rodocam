@@ -18,6 +18,7 @@ package com.google.jetpackcamera.core.camera
 import androidx.camera.core.CameraInfo
 import com.google.jetpackcamera.core.camera.effects.CameraEffectFeatureKey
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.model.DynamicRange
@@ -25,6 +26,7 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
 import com.google.jetpackcamera.model.VideoQuality
@@ -48,7 +50,8 @@ internal sealed interface PerpetualSessionSettings {
         val dynamicRange: DynamicRange,
         val videoQuality: VideoQuality,
         val imageFormat: ImageOutputFormat,
-        val lowLightBoostPriority: LowLightBoostPriority
+        val lowLightBoostPriority: LowLightBoostPriority,
+        val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE
     ) : PerpetualSessionSettings
 
     /**
@@ -77,7 +80,8 @@ internal data class TransientSessionSettings(
     val flashMode: FlashMode,
     val primaryLensFacing: LensFacing,
     val zoomRatios: Map<LensFacing, Float>,
-    val testPattern: TestPattern
+    val testPattern: TestPattern,
+    val manualControls: ManualControls = ManualControls.AUTO
 )
 
 data class InitialRecordingSettings(

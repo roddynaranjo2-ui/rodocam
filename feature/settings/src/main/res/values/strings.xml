@@ -125,6 +125,7 @@
 
     <string name="fps_description_unavailable">No fixed frame rates supported</string>
     <string name="fps_description_auto">Auto Frame Rate</string>
+    <string name="setting_unavailable_description">Unavailable</string>
     <string name="fps_description">%d fps</string>
 
     <string name="fps_selector_auto">Auto</string>
@@ -140,6 +141,17 @@
 
     <!-- video quality strings -->
     <string name="video_quality_title">Set Video Quality</string>
+
+    <!-- Image format setting -->
+    <string name="image_format_title">Photo format</string>
+    <string name="image_format_value_jpeg">JPEG</string>
+    <string name="image_format_value_ultra_hdr">Ultra HDR</string>
+    <string name="image_format_value_heic">HEIC</string>
+    <string name="image_format_value_raw_jpeg">RAW + JPEG</string>
+    <string name="image_format_value_jpeg_info">Standard JPEG. Best compatibility.</string>
+    <string name="image_format_value_ultra_hdr_info">JPEG with an embedded HDR gain map. Brighter highlights on HDR displays, still opens everywhere.</string>
+    <string name="image_format_value_heic_info">High-efficiency HEIC. About half the file size of JPEG at the same quality.</string>
+    <string name="image_format_value_raw_jpeg_info">Saves an unprocessed DNG next to the JPEG for full editing latitude. Larger files; zero shutter lag is disabled.</string>
     <string name="video_quality_value_auto">Auto</string>
     <string name="video_quality_value_sd">SD</string>
     <string name="video_quality_value_hd">HD</string>
@@ -178,6 +190,7 @@
     <string name="flash_llb_rationale_prefix">Low Light Boost</string>
 
     <string name="video_quality_rationale_prefix">Video quality</string>
+    <string name="image_format_rationale_prefix">Photo format</string>
     <string name="video_quality_rationale_suffix_default">the current dynamic range</string>
     <string name="video_quality_rationale_suffix_sdr">SDR</string>
 

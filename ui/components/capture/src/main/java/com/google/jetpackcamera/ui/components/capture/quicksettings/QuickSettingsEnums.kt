@@ -120,6 +120,39 @@ enum class CameraDynamicRange : QuickSettingsEnum {
     }
 }
 
+/**
+ * Quick-settings presentation of [com.google.jetpackcamera.model.CameraExtensionMode]
+ * (CameraX vendor extensions).
+ */
+enum class CameraExtensionModeEnum : QuickSettingsEnum {
+    OFF {
+        override fun getDrawableResId() = R.drawable.ic_extension_off
+        override fun getTextResId() = R.string.quick_settings_extension_off
+        override fun getDescriptionResId() = R.string.quick_settings_extension_off_description
+    },
+    NIGHT {
+        override fun getDrawableResId() = R.drawable.ic_nightlight_filled
+        override fun getTextResId() = R.string.quick_settings_extension_night
+        override fun getDescriptionResId() = R.string.quick_settings_extension_night_description
+    },
+    BOKEH {
+        override fun getDrawableResId() = R.drawable.ic_portrait_filled
+        override fun getTextResId() = R.string.quick_settings_extension_bokeh
+        override fun getDescriptionResId() = R.string.quick_settings_extension_bokeh_description
+    },
+    HDR {
+        override fun getDrawableResId() = R.drawable.ic_hdr_on
+        override fun getTextResId() = R.string.quick_settings_extension_hdr
+        override fun getDescriptionResId() = R.string.quick_settings_extension_hdr_description
+    },
+    FACE_RETOUCH {
+        override fun getDrawableResId() = R.drawable.ic_face_retouching_natural
+        override fun getTextResId() = R.string.quick_settings_extension_face_retouch
+        override fun getDescriptionResId() =
+            R.string.quick_settings_extension_face_retouch_description
+    }
+}
+
 enum class CameraCaptureMode : QuickSettingsEnum {
     STANDARD {
 

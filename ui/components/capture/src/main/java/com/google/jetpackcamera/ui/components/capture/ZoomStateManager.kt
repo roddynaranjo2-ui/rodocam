@@ -168,4 +168,19 @@ class ZoomStateManager(
             functionalZoomRange = newZoomRange
         }
     }
+
+    /**
+     * Updates the supported zoom range without resetting the current zoom level.
+     *
+     * The zoom range is usually unknown (a degenerate `[1, 1]` range) while the camera is still
+     * initializing and only becomes available once the camera constraints are published. Without
+     * this update the manager would keep clamping every gesture to `1x`.
+     */
+    suspend fun onZoomRangeChanged(newZoomRange: Range<Float>) {
+        if (newZoomRange == functionalZoomRange) return
+        mutatorMutex.mutate(MutatePriority.PreventUserInput) {
+            functionalZoomRange = newZoomRange
+            functionalZoom = functionalZoom.coerceIn(newZoomRange.toClosedRange())
+        }
+    }
 }

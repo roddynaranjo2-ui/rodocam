@@ -94,7 +94,9 @@ import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -139,6 +141,7 @@ import kotlinx.coroutines.flow.onCompletion
 private const val TAG = "PreviewScreen"
 private const val BLINK_TIME = 100L
 private val TAP_TO_FOCUS_INDICATOR_SIZE = 56.dp
+private val TAP_TO_FOCUS_LOCK_ICON_SIZE = 18.dp
 private const val FOCUS_INDICATOR_RESULT_DELAY = 100L
 
 /**
@@ -513,15 +516,22 @@ private fun DetectWindowColorModeChanges(
  * A composable that displays the camera preview and handles user input gestures.
  *
  * This component is the core of the camera's UI, showing the live feed from the camera.
- * It supports several gestures:
+ * It supports several gestures (mirroring the Pixel camera):
  * - **Single Tap:** Triggers a tap-to-focus event at the tapped location.
- * - **Double Tap:** Flips the camera between front and back lenses.
+ * - **Long Press:** Locks focus and exposure at the pressed location (AE/AF lock) with haptic
+ *   feedback; released by the next tap.
+ * - **Double Tap:** Toggles zoom between 1x and 2x when [onDoubleTapZoom] is provided, otherwise
+ *   flips the camera between front and back lenses.
  * - **Pinch Gesture:** Scales the camera's zoom level.
  *
  * @param previewDisplayUiState the [PreviewDisplayUiState] for this component.
  * @param onTapToFocus the callback for tapping to focus.
  * @param onFlipCamera the callback for flipping the camera.
  * @param onScaleZoom the callback for scaling the zoom.
+ * @param onLockFocusAndExposure the callback for long-pressing to lock AE/AF, or `null` to
+ *   disable the gesture.
+ * @param onDoubleTapZoom the callback for double-tapping to toggle zoom, or `null` to keep the
+ *   legacy flip-camera behaviour.
  * @param onRequestWindowColorMode the callback for requesting a window color mode.
  * @param surfaceRequest the [SurfaceRequest] for the preview.
  * @param focusMeteringUiState the [FocusMeteringUiState] for this component.
@@ -536,16 +546,30 @@ fun PreviewDisplay(
     onRequestWindowColorMode: (Int) -> Unit,
     surfaceRequest: SurfaceRequest?,
     focusMeteringUiState: FocusMeteringUiState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLockFocusAndExposure: ((x: Float, y: Float) -> Unit)? = null,
+    onDoubleTapZoom: (() -> Unit)? = null
 ) {
     val aspectRatioUiState = previewDisplayUiState.aspectRatioUiState
     if (aspectRatioUiState !is AspectRatioUiState.Available) {
         return
     }
+    // Keep the latest callbacks without re-creating the gesture state (and therefore dropping an
+    // in-progress pinch) every time the parent recomposes with a new lambda instance.
+    val currentOnScaleZoom by rememberUpdatedState(onScaleZoom)
+    val currentOnTapToFocus by rememberUpdatedState(onTapToFocus)
+    val currentOnFlipCamera by rememberUpdatedState(onFlipCamera)
+    val currentOnLockFocusAndExposure by rememberUpdatedState(onLockFocusAndExposure)
+    val currentOnDoubleTapZoom by rememberUpdatedState(onDoubleTapZoom)
+    val hapticFeedback = LocalHapticFeedback.current
+
     @Suppress("DEPRECATION")
     val transformableState = rememberTransformableState(
         onTransformation = { pinchZoomChange, _, _ ->
-            onScaleZoom(pinchZoomChange)
+            // Ignore no-op deltas so a plain tap/drag doesn't spam the zoom pipeline.
+            if (pinchZoomChange != 1f) {
+                currentOnScaleZoom(pinchZoomChange)
+            }
         }
     )
 
@@ -603,8 +627,11 @@ fun PreviewDisplay(
                     .alpha(imageAlpha)
                     .clip(RoundedCornerShape(16.dp))
             ) {
+                // SurfaceView (EXTERNAL) is more efficient, but before API 25 it does not
+                // support the transforms/clipping the viewfinder relies on.
                 val implementationMode = when {
-                    Build.VERSION.SDK_INT > 24 -> ImplementationMode.EXTERNAL
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1 ->
+                        ImplementationMode.EXTERNAL
                     else -> ImplementationMode.EMBEDDED
                 }
 
@@ -618,22 +645,45 @@ fun PreviewDisplay(
                 CameraXViewfinder(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(onFlipCamera) {
+                        .pointerInput(Unit) {
                             detectTapGestures(
                                 onDoubleTap = { offset ->
-                                    // double tap to flip camera
-                                    Log.d(TAG, "onDoubleTap $offset")
-                                    onFlipCamera()
+                                    val zoomToggle = currentOnDoubleTapZoom
+                                    if (zoomToggle != null) {
+                                        // Pixel: double tap toggles 1x <-> 2x.
+                                        Log.d(TAG, "onDoubleTap zoom toggle $offset")
+                                        zoomToggle()
+                                    } else {
+                                        // Legacy: double tap to flip camera.
+                                        Log.d(TAG, "onDoubleTap flip $offset")
+                                        currentOnFlipCamera()
+                                    }
+                                },
+                                onLongPress = { offset ->
+                                    val lock = currentOnLockFocusAndExposure
+                                        ?: return@detectTapGestures
+                                    with(coordinateTransformer) {
+                                        val surfaceCoords = offset.transform()
+                                        Log.d(
+                                            TAG,
+                                            "onLongPress AE/AF lock: " +
+                                                "input{$offset} -> surface{$surfaceCoords}"
+                                        )
+                                        hapticFeedback.performHapticFeedback(
+                                            HapticFeedbackType.LongPress
+                                        )
+                                        lock(surfaceCoords.x, surfaceCoords.y)
+                                    }
                                 },
                                 onTap = {
                                     with(coordinateTransformer) {
                                         val surfaceCoords = it.transform()
                                         Log.d(
-                                            "TAG",
+                                            TAG,
                                             "onTapToFocus: " +
                                                 "input{$it} -> surface{$surfaceCoords}"
                                         )
-                                        onTapToFocus(surfaceCoords.x, surfaceCoords.y)
+                                        currentOnTapToFocus(surfaceCoords.x, surfaceCoords.y)
                                     }
                                 }
                             )
@@ -736,45 +786,33 @@ fun StabilizationIcon(stabilizationUiState: StabilizationUiState, modifier: Modi
                 Icon(
                     modifier = modifier.size(IconButtonDefaults.smallIconSize),
 
+                    // Never throw from a composable: unknown/unsupported combinations degrade to
+                    // a generic stabilization glyph instead of crashing the viewfinder.
                     painter = when (stabilizationUiState) {
                         is StabilizationUiState.Specific ->
                             when (stabilizationUiState.stabilizationMode) {
-                                StabilizationMode.AUTO ->
-                                    throw IllegalStateException(
-                                        "AUTO is not a specific StabilizationUiState."
-                                    )
-
                                 StabilizationMode.HIGH_QUALITY ->
                                     painterResource(R.drawable.video_stable_hq_filled_icon)
 
                                 StabilizationMode.OPTICAL ->
                                     painterResource(R.drawable.video_stable_ois_filled_icon)
 
-                                StabilizationMode.ON ->
+                                StabilizationMode.ON,
+                                StabilizationMode.AUTO,
+                                StabilizationMode.OFF ->
                                     painterResource(R.drawable.ic_video_stable)
-
-                                else ->
-                                    TODO(
-                                        "Cannot retrieve icon for unimplemented " +
-                                            "stabilization mode:" +
-                                            "${stabilizationUiState.stabilizationMode}"
-                                    )
                             }
 
                         is StabilizationUiState.Auto -> {
                             when (stabilizationUiState.stabilizationMode) {
-                                StabilizationMode.ON ->
-                                    painterResource(R.drawable.video_stable_auto_filled_icon)
-
                                 StabilizationMode.OPTICAL ->
                                     painterResource(R.drawable.video_stable_ois_auto_filled_icon)
 
-                                else ->
-                                    TODO(
-                                        "Auto stabilization not yet implemented for " +
-                                            "${stabilizationUiState.stabilizationMode}, " +
-                                            "unable to retrieve icon."
-                                    )
+                                StabilizationMode.ON,
+                                StabilizationMode.HIGH_QUALITY,
+                                StabilizationMode.AUTO,
+                                StabilizationMode.OFF ->
+                                    painterResource(R.drawable.video_stable_auto_filled_icon)
                             }
                         }
                     },
@@ -968,6 +1006,7 @@ private fun FocusMeteringIndicator(
                 showResultIndicator = false
             }
         }
+        val lockedDescription = stringResource(R.string.focus_exposure_locked_description)
         // Map coordinates from surface coordinates back to screen coordinates
         val tapCoords =
             remember(
@@ -981,7 +1020,9 @@ private fun FocusMeteringIndicator(
                 }
             }
         val showFocusMeteringIndicator = status == FocusMeteringUiState.Status.RUNNING
-        val isVisible = showFocusMeteringIndicator || showResultIndicator
+        // A locked point stays on screen (with a padlock) until the next tap releases it.
+        val isVisible = showFocusMeteringIndicator || showResultIndicator ||
+            focusMeteringUiState.isLocked
         AnimatedVisibility(
             visible = isVisible,
             enter = if (disableAnimations) {
@@ -1007,20 +1048,52 @@ private fun FocusMeteringIndicator(
             Box(
                 Modifier
                     .testTag(FOCUS_METERING_INDICATOR_TAG)
+                    .semantics {
+                        if (focusMeteringUiState.isLocked) {
+                            stateDescription = lockedDescription
+                        }
+                    }
                     .alpha(
-                        if (focusMeteringUiState.status == FocusMeteringUiState.Status.SUCCESS) {
+                        if (focusMeteringUiState.isLocked ||
+                            focusMeteringUiState.status == FocusMeteringUiState.Status.SUCCESS
+                        ) {
                             1f
                         } else {
                             alpha
                         }
                     )
                     .border(
-                        1.dp,
-                        Color.White,
+                        if (focusMeteringUiState.isLocked) 2.dp else 1.dp,
+                        if (focusMeteringUiState.isLocked) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            Color.White
+                        },
                         CircleShape
                     )
-                    .size(TAP_TO_FOCUS_INDICATOR_SIZE)
-            )
+                    .size(TAP_TO_FOCUS_INDICATOR_SIZE),
+                contentAlignment = Alignment.Center
+            ) {
+                // Pop the padlock in once the lock engages instead of flashing it in place.
+                AnimatedVisibility(
+                    visible = focusMeteringUiState.isLocked,
+                    enter = if (disableAnimations) {
+                        EnterTransition.None
+                    } else {
+                        fadeIn() + scaleIn(initialScale = 0.6f)
+                    },
+                    exit = if (disableAnimations) ExitTransition.None else fadeOut()
+                ) {
+                    Icon(
+                        modifier = Modifier
+                            .testTag(FOCUS_LOCK_BADGE_TAG)
+                            .size(TAP_TO_FOCUS_LOCK_ICON_SIZE),
+                        painter = painterResource(R.drawable.ic_lock),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

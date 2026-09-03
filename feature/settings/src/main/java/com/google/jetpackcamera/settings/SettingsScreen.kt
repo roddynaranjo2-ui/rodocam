@@ -28,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -37,12 +38,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
+import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
@@ -53,6 +56,7 @@ import com.google.jetpackcamera.settings.ui.ConcurrentCameraSetting
 import com.google.jetpackcamera.settings.ui.DarkModeSetting
 import com.google.jetpackcamera.settings.ui.DefaultCameraFacing
 import com.google.jetpackcamera.settings.ui.FlashModeSetting
+import com.google.jetpackcamera.settings.ui.ImageFormatSetting
 import com.google.jetpackcamera.settings.ui.LowLightBoostPrioritySetting
 import com.google.jetpackcamera.settings.ui.MaxVideoDurationSetting
 import com.google.jetpackcamera.settings.ui.RecordingAudioSetting
@@ -93,7 +97,8 @@ fun SettingsScreen(
         setDarkMode = viewModel::setDarkMode,
         setVideoQuality = viewModel::setVideoQuality,
         setLowLightBoostPriority = viewModel::setLowLightBoostPriority,
-        setConcurrentCameraMode = viewModel::setConcurrentCameraMode
+        setConcurrentCameraMode = viewModel::setConcurrentCameraMode,
+        setImageFormat = viewModel::setImageFormat
     )
     val permissionStates = rememberMultiplePermissionsState(
         permissions =
@@ -104,7 +109,13 @@ fun SettingsScreen(
         )
     )
 
-    viewModel.setGrantedPermissions(permissionStates)
+    // Side effect: must not run during composition (it mutates ViewModel state on every
+    // recomposition). `permissionStates` itself is a stable remembered object, so key on the
+    // actual granted/revoked snapshot to re-run only when a permission status changes.
+    val grantedSnapshot = permissionStates.permissions.map { it.status.isGranted }
+    LaunchedEffect(grantedSnapshot) {
+        viewModel.setGrantedPermissions(permissionStates)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -124,7 +135,8 @@ private fun SettingsScreen(
     setDarkMode: (DarkMode) -> Unit = {},
     setVideoQuality: (VideoQuality) -> Unit = {},
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit = {},
-    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {}
+    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
+    setImageFormat: (ImageOutputFormat) -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
         rememberTopAppBarState()
@@ -162,7 +174,8 @@ private fun SettingsScreen(
                     setDarkMode = setDarkMode,
                     setVideoQuality = setVideoQuality,
                     setLowLightBoostPriority = setLowLightBoostPriority,
-                    setConcurrentCameraMode = setConcurrentCameraMode
+                    setConcurrentCameraMode = setConcurrentCameraMode,
+                    setImageFormat = setImageFormat
                 )
             }
         }
@@ -184,7 +197,8 @@ internal fun SettingsList(
     setVideoQuality: (VideoQuality) -> Unit = {},
     setMaxVideoDuration: (Long) -> Unit = {},
     setDarkMode: (DarkMode) -> Unit = {},
-    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {}
+    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
+    setImageFormat: (ImageOutputFormat) -> Unit = {}
 ) {
     SectionHeader(title = stringResource(id = R.string.section_title_camera_settings))
 
@@ -211,6 +225,11 @@ internal fun SettingsList(
     CameraEffectSetting(
         cameraEffectUiState = uiState.cameraEffectUiState,
         setCameraEffect = setCameraEffect
+    )
+
+    ImageFormatSetting(
+        imageFormatUiState = uiState.imageFormatUiState,
+        setImageFormat = setImageFormat
     )
 
     LowLightBoostPrioritySetting(

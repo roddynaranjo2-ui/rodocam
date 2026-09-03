@@ -22,6 +22,15 @@ internal sealed interface CameraEvent {
 
     /**
      * Represents a focus metering event, that the camera can act on.
+     *
+     * @property x Surface x coordinate of the tap.
+     * @property y Surface y coordinate of the tap.
+     * @property lock When true (Pixel-style long-press) the AF/AE/AWB regions stay locked at the
+     *   point until the next tap instead of auto-cancelling after a timeout.
      */
-    data class FocusMeteringEvent(val x: Float, val y: Float) : CameraEvent
+    data class FocusMeteringEvent(
+        val x: Float,
+        val y: Float,
+        val lock: Boolean = false
+    ) : CameraEvent
 }

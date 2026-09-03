@@ -21,9 +21,11 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.SurfaceRequest
 import com.google.jetpackcamera.core.camera.CameraState
 import com.google.jetpackcamera.core.camera.CameraSystem
+import com.google.jetpackcamera.core.camera.FocusState
 import com.google.jetpackcamera.core.camera.OnVideoRecordEvent
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
@@ -33,6 +35,7 @@ import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
+import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
@@ -174,6 +177,25 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
         }
     }
 
+    override fun setManualControls(manualControls: ManualControls) {
+        currentSettings.update { old -> old.copy(manualControls = manualControls) }
+    }
+
+    override suspend fun setProModeEnabled(enabled: Boolean) {
+        currentSettings.update { old ->
+            old.copy(
+                isProModeEnabled = enabled,
+                manualControls = if (enabled) old.manualControls else ManualControls.AUTO
+            )
+        }
+    }
+
+    override suspend fun setExtensionMode(extensionMode: CameraExtensionMode) {
+        currentSettings.update { old ->
+            old.copy(extensionMode = extensionMode)
+        }
+    }
+
     override fun getCurrentCameraState(): StateFlow<CameraState> = _currentCameraState.asStateFlow()
 
     private val _systemConstraints = MutableStateFlow<CameraSystemConstraints?>(null)
@@ -229,8 +251,30 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
         }
     }
 
+    /** Records every focus/metering request as `(x, y, locked)` so tests can assert on them. */
+    val focusMeteringRequests = mutableListOf<Triple<Float, Float, Boolean>>()
+
     override suspend fun tapToFocus(x: Float, y: Float) {
-        TODO("Not yet implemented")
+        focusMeteringRequests += Triple(x, y, false)
+        updateFocusState(x, y, isLocked = false)
+    }
+
+    override suspend fun lockFocusAndExposure(x: Float, y: Float) {
+        focusMeteringRequests += Triple(x, y, true)
+        updateFocusState(x, y, isLocked = true)
+    }
+
+    private fun updateFocusState(x: Float, y: Float, isLocked: Boolean) {
+        _currentCameraState.update { old ->
+            old.copy(
+                focusState = FocusState.Specified(
+                    x = x,
+                    y = y,
+                    status = FocusState.Status.SUCCESS,
+                    isLocked = isLocked
+                )
+            )
+        }
     }
 
     override suspend fun setCameraEffect(cameraEffect: CameraEffectId) {

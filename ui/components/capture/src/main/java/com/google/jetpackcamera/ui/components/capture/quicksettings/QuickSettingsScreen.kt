@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
@@ -37,6 +38,7 @@ import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.ui.components.capture.R
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.AspectRatioRow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.CaptureModeRow
+import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.ExtensionModeRow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.FlashRow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.HdrRow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.QuickNavSettings
@@ -45,6 +47,7 @@ import com.google.jetpackcamera.ui.controller.quicksettings.QuickSettingsControl
 import com.google.jetpackcamera.ui.uistate.SingleSelectableUiState
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
@@ -167,6 +170,16 @@ private fun QuickSettingsContent(
                 hdrUiState = quickSettingsUiState.hdrUiState
             )
         }
+
+        // CameraX Extensions scene modes (photo pipelines only)
+        if (captureMode != CaptureMode.VIDEO_ONLY &&
+            quickSettingsUiState.extensionModeUiState is ExtensionModeUiState.Available
+        ) {
+            ExtensionModeRow(
+                onSetExtensionMode = quickSettingsController::setExtensionMode,
+                extensionModeUiState = quickSettingsUiState.extensionModeUiState
+            )
+        }
     }
 }
 
@@ -187,6 +200,8 @@ class NoOpQuickSettingsController : QuickSettingsController {
     override fun setImageFormat(imageOutputFormat: ImageOutputFormat) {}
 
     override fun setCaptureMode(captureMode: CaptureMode) {}
+
+    override fun setExtensionMode(extensionMode: CameraExtensionMode) {}
 }
 
 @Preview
@@ -228,6 +243,14 @@ fun ExpandedQuickSettingsUiPreview() {
                     )
                 ),
                 hdrUiState = HdrUiState.Unavailable,
+                extensionModeUiState = ExtensionModeUiState.Available(
+                    selectedMode = CameraExtensionMode.NIGHT,
+                    availableModes = listOf(
+                        CameraExtensionMode.NIGHT,
+                        CameraExtensionMode.BOKEH,
+                        CameraExtensionMode.HDR
+                    )
+                ),
                 quickSettingsIsOpen = true
             ),
             onNavigateToSettings = {},

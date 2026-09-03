@@ -77,6 +77,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
     implementation(project(":core:camera"))
+    // CameraSystem.getCurrentSettings() exposes CameraAppSettings (:core:settings).
+    implementation(project(":core:settings"))
 
     // Testing
     testImplementation(libs.junit)

@@ -37,6 +37,9 @@
     <string name="microphone_on">Microphone On</string>
 
     <string name="zoom_ratio_text">%1$.2fx</string>
+    <string name="zoom_button_content_description">Zoom %1$s</string>
+    <string name="zoom_button_state_selected">Selected</string>
+    <string name="zoom_button_state_not_selected">Not selected</string>
 
 
     <!-- Stabilization -->
@@ -91,6 +94,7 @@
     <string name="quick_settings_flash_llb_description">Low Light Boost on</string>
 
     <string name="low_light_boost_error_toast_message">An error occurred when running low light boost.</string>
+    <string name="camera_session_error_toast_message">The camera could not be started. Please try again.</string>
     <!-- Capture Mode Text -->
     <string name="quick_settings_text_capture_mode_standard">Hybrid Capture</string>
     <string name="quick_settings_text_capture_mode_video_only">Video Only</string>
@@ -112,6 +116,19 @@
     <!-- QuickSettings Titles -->
     <string name="quick_settings_title_capture_mode">Capture Mode</string>
     <string name="quick_settings_title_hdr">HDR</string>
+    <string name="quick_settings_title_extension_mode">Scene mode</string>
+
+    <!-- CameraX Extensions (vendor scene modes) Text -->
+    <string name="quick_settings_extension_off">Off</string>
+    <string name="quick_settings_extension_night">Night</string>
+    <string name="quick_settings_extension_bokeh">Portrait</string>
+    <string name="quick_settings_extension_hdr">HDR+</string>
+    <string name="quick_settings_extension_face_retouch">Retouch</string>
+    <string name="quick_settings_extension_off_description">Scene mode off</string>
+    <string name="quick_settings_extension_night_description">Night mode: multi-frame low-light capture</string>
+    <string name="quick_settings_extension_bokeh_description">Portrait mode: background blur</string>
+    <string name="quick_settings_extension_hdr_description">HDR scene mode: multi-frame high dynamic range</string>
+    <string name="quick_settings_extension_face_retouch_description">Face retouch: skin smoothing</string>
     <string name="quick_settings_title_aspect_ratio">Aspect Ratio</string>
     <string name="quick_settings_title_flash_mode">Flash Mode</string>
 
@@ -132,4 +149,30 @@
     <string name="quick_settings_preview_sd_description">Standard Definition</string>
     <string name="quick_settings_preview_hd_description">High Definition</string>
     <string name="quick_settings_preview_fhd_description">Full High Definition</string>
+
+    <!-- Pro (manual) controls -->
+    <string name="pro_mode_label">Pro</string>
+    <string name="pro_iso_label">ISO</string>
+    <string name="pro_shutter_label">Shutter</string>
+    <string name="pro_ev_label">EV</string>
+    <string name="pro_wb_label">WB</string>
+    <string name="pro_focus_label">Focus</string>
+    <string name="pro_ae_lock_label">AE</string>
+    <string name="pro_reset_label">Reset</string>
+    <string name="pro_value_auto">Auto</string>
+    <string name="pro_state_manual">Manual</string>
+    <string name="pro_mode_toggle_description">Pro mode</string>
+    <string name="pro_value_locked">Locked</string>
+    <string name="pro_value_unlocked">Unlocked</string>
+    <string name="pro_wb_auto">Auto</string>
+    <string name="pro_wb_incandescent">Incandescent</string>
+    <string name="pro_wb_fluorescent">Fluorescent</string>
+    <string name="pro_wb_warm_fluorescent">Warm fluorescent</string>
+    <string name="pro_wb_daylight">Daylight</string>
+    <string name="pro_wb_cloudy">Cloudy</string>
+    <string name="pro_wb_twilight">Twilight</string>
+    <string name="pro_wb_shade">Shade</string>
+    <string name="pro_wb_kelvin_label">K</string>
+    <string name="pro_shadows_label">Shadows</string>
+    <string name="focus_exposure_locked_description">Focus and exposure locked</string>
 </resources>
