@@ -26,11 +26,14 @@ import com.google.jetpackcamera.core.camera.OnVideoRecordEvent
 import com.google.jetpackcamera.core.camera.testing.FakeCameraSystem
 import com.google.jetpackcamera.data.media.MediaDescriptor
 import com.google.jetpackcamera.model.CaptureEvent
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ExternalCaptureMode
 import com.google.jetpackcamera.model.ImageCaptureEvent
 import com.google.jetpackcamera.model.IntProgress
+import com.google.jetpackcamera.model.PendingCaptureAction
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.SaveMode
+import com.google.jetpackcamera.model.TimerCountdown
 import com.google.jetpackcamera.model.VideoCaptureEvent
 import com.google.jetpackcamera.settings.model.DEFAULT_CAMERA_APP_SETTINGS
 import com.google.jetpackcamera.ui.controller.ImageWellController
@@ -42,7 +45,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
@@ -86,7 +91,8 @@ class CaptureControllerImplTest {
         },
         imageWellController: ImageWellController? = fakeImageWellController,
         onImageCached: ((Uri) -> Unit)? = null,
-        onVideoCached: ((Uri) -> Unit)? = null
+        onVideoCached: ((Uri) -> Unit)? = null,
+        onCountdownTick: (TimerCountdown?) -> Unit = {}
     ): CaptureControllerImpl {
         return CaptureControllerImpl(
             trackedCaptureUiState = trackedCaptureUiState,
@@ -98,7 +104,8 @@ class CaptureControllerImplTest {
             imageWellController = imageWellController,
             onImageCached = onImageCached,
             onVideoCached = onVideoCached,
-            coroutineContext = testScope.coroutineContext
+            coroutineContext = testScope.coroutineContext,
+            onCountdownTick = onCountdownTick
         )
     }
 
@@ -310,6 +317,134 @@ class CaptureControllerImplTest {
         controller.setPaused(false)
         advanceUntilIdle()
         assertThat(fakeCameraSystem.isRecordingPaused).isFalse()
+    }
+
+    @Test
+    fun captureImage_timerOff_capturesImmediatelyWithoutCountdown() = runCameraTest {
+        val ticks = mutableListOf<TimerCountdown?>()
+        val controller = createCaptureController(onCountdownTick = { ticks += it })
+
+        controller.captureImage(contentResolver, CaptureTimer.OFF)
+        advanceUntilIdle()
+
+        assertThat(ticks).isEmpty()
+        assertThat(controller.isCountingDown()).isFalse()
+        assertThat(trackedCaptureUiState.value.timerCountdown).isNull()
+        assertThat(captureEvents.receive())
+            .isInstanceOf(ImageCaptureEvent.SingleImageSaved::class.java)
+    }
+
+    @Test
+    fun captureImage_threeSecondTimer_countsDownThenCaptures() = runCameraTest {
+        val ticks = mutableListOf<TimerCountdown?>()
+        val controller = createCaptureController(onCountdownTick = { ticks += it })
+
+        controller.captureImage(contentResolver, CaptureTimer.THREE_SECONDS)
+        runCurrent()
+
+        assertThat(controller.isCountingDown()).isTrue()
+        assertThat(trackedCaptureUiState.value.timerCountdown).isEqualTo(
+            TimerCountdown(
+                remainingSeconds = 3,
+                totalSeconds = 3,
+                pendingAction = PendingCaptureAction.IMAGE
+            )
+        )
+        assertThat(fakeImageWellController.updateLastCapturedMediaCallCount).isEqualTo(0)
+
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND)
+        runCurrent()
+        assertThat(trackedCaptureUiState.value.timerCountdown?.remainingSeconds).isEqualTo(2)
+
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND)
+        runCurrent()
+        assertThat(trackedCaptureUiState.value.timerCountdown?.remainingSeconds).isEqualTo(1)
+        assertThat(fakeImageWellController.updateLastCapturedMediaCallCount).isEqualTo(0)
+
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND)
+        advanceUntilIdle()
+
+        assertThat(trackedCaptureUiState.value.timerCountdown).isNull()
+        assertThat(controller.isCountingDown()).isFalse()
+        assertThat(ticks.map { it?.remainingSeconds }).containsExactly(3, 2, 1, null).inOrder()
+        assertThat(fakeImageWellController.updateLastCapturedMediaCallCount).isEqualTo(1)
+        assertThat(captureEvents.receive())
+            .isInstanceOf(ImageCaptureEvent.SingleImageSaved::class.java)
+    }
+
+    @Test
+    fun cancelCountdown_duringCountdown_clearsStateAndSkipsCapture() = runCameraTest {
+        val ticks = mutableListOf<TimerCountdown?>()
+        val controller = createCaptureController(onCountdownTick = { ticks += it })
+
+        controller.captureImage(contentResolver, CaptureTimer.TEN_SECONDS)
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND * 2)
+        runCurrent()
+        assertThat(trackedCaptureUiState.value.timerCountdown?.remainingSeconds).isEqualTo(8)
+
+        controller.cancelCountdown()
+
+        assertThat(controller.isCountingDown()).isFalse()
+        assertThat(trackedCaptureUiState.value.timerCountdown).isNull()
+        assertThat(ticks.last()).isNull()
+
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND * 20)
+        advanceUntilIdle()
+        assertThat(fakeImageWellController.updateLastCapturedMediaCallCount).isEqualTo(0)
+        assertThat(captureEvents.tryReceive().isFailure).isTrue()
+    }
+
+    @Test
+    fun captureImage_whileCountingDown_restartsCountdown() = runCameraTest {
+        val controller = createCaptureController()
+
+        controller.captureImage(contentResolver, CaptureTimer.TEN_SECONDS)
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND * 4)
+        runCurrent()
+        assertThat(trackedCaptureUiState.value.timerCountdown?.remainingSeconds).isEqualTo(6)
+
+        controller.captureImage(contentResolver, CaptureTimer.THREE_SECONDS)
+        runCurrent()
+
+        assertThat(controller.isCountingDown()).isTrue()
+        assertThat(trackedCaptureUiState.value.timerCountdown?.remainingSeconds).isEqualTo(3)
+        assertThat(trackedCaptureUiState.value.timerCountdown?.totalSeconds).isEqualTo(3)
+
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND * 3)
+        advanceUntilIdle()
+        // Only the restarted countdown fires; the original 10 s request was replaced.
+        assertThat(fakeImageWellController.updateLastCapturedMediaCallCount).isEqualTo(1)
+    }
+
+    @Test
+    fun startVideoRecording_withTimer_publishesVideoPendingActionThenRecords() = runCameraTest {
+        val controller = createCaptureController()
+
+        controller.startVideoRecording(CaptureTimer.THREE_SECONDS)
+        runCurrent()
+
+        assertThat(trackedCaptureUiState.value.timerCountdown?.pendingAction)
+            .isEqualTo(PendingCaptureAction.VIDEO)
+        assertThat(fakeCameraSystem.numVideoRecordingStarts).isEqualTo(0)
+
+        advanceTimeBy(CaptureTimer.MILLIS_PER_SECOND * 3)
+        advanceUntilIdle()
+
+        assertThat(trackedCaptureUiState.value.timerCountdown).isNull()
+        assertThat(fakeCameraSystem.numVideoRecordingStarts).isEqualTo(1)
+        assertThat(captureEvents.receive()).isInstanceOf(VideoCaptureEvent.VideoSaved::class.java)
+    }
+
+    @Test
+    fun cancelCountdown_whenIdle_isNoOp() = runCameraTest {
+        val ticks = mutableListOf<TimerCountdown?>()
+        val controller = createCaptureController(onCountdownTick = { ticks += it })
+
+        controller.cancelCountdown()
+
+        assertThat(ticks).isEmpty()
+        assertThat(controller.isCountingDown()).isFalse()
+        assertThat(trackedCaptureUiState.value.timerCountdown).isNull()
     }
 
     private fun runCameraTest(testBody: suspend TestScope.() -> Unit) = runTest(testDispatcher) {

@@ -16,6 +16,7 @@
 package com.google.jetpackcamera.ui.uistate.capture
 
 import com.google.jetpackcamera.data.media.MediaDescriptor
+import com.google.jetpackcamera.model.TimerCountdown
 
 /**
  * Data class to track UI-specific states within the PreviewViewModel.
@@ -36,5 +37,7 @@ data class TrackedCaptureUiState(
     val lastBlinkTimeStamp: Long = 0,
     val screenFlashUiState: ScreenFlashUiState = ScreenFlashUiState(),
     /** Whether the Pro (manual controls) panel is expanded over the viewfinder. */
-    val isProPanelOpen: Boolean = false
+    val isProPanelOpen: Boolean = false,
+    /** Self-timer countdown in progress before a delayed capture fires; null when idle. */
+    val timerCountdown: TimerCountdown? = null
 )

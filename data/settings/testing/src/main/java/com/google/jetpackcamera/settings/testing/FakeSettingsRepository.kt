@@ -18,6 +18,7 @@ package com.google.jetpackcamera.settings.testing
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -27,6 +28,7 @@ import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.SettingsRepository
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import com.google.jetpackcamera.settings.model.DEFAULT_CAMERA_APP_SETTINGS
@@ -121,5 +123,15 @@ class FakeSettingsRepository(
     override suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {
         _defaultCameraAppSettings.value =
             _defaultCameraAppSettings.value.copy(concurrentCameraMode = concurrentCameraMode)
+    }
+
+    override suspend fun updateViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings) {
+        _defaultCameraAppSettings.value =
+            _defaultCameraAppSettings.value.copy(viewfinderAssist = viewfinderAssist.sanitized())
+    }
+
+    override suspend fun updateCaptureTimer(captureTimer: CaptureTimer) {
+        _defaultCameraAppSettings.value =
+            _defaultCameraAppSettings.value.copy(captureTimer = captureTimer)
     }
 }

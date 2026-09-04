@@ -129,6 +129,17 @@
     <string name="quick_settings_extension_bokeh_description">Portrait mode: background blur</string>
     <string name="quick_settings_extension_hdr_description">HDR scene mode: multi-frame high dynamic range</string>
     <string name="quick_settings_extension_face_retouch_description">Face retouch: skin smoothing</string>
+
+    <!-- Self-timer Text -->
+    <string name="quick_settings_title_timer">Timer</string>
+    <string name="quick_settings_timer_off">Off</string>
+    <string name="quick_settings_timer_3s">3s</string>
+    <string name="quick_settings_timer_10s">10s</string>
+    <string name="quick_settings_timer_off_description">Timer off</string>
+    <string name="quick_settings_timer_3s_description">3 second timer</string>
+    <string name="quick_settings_timer_10s_description">10 second timer</string>
+    <string name="timer_countdown_description">Capturing in %1$d seconds. Tap to cancel</string>
+    <string name="timer_countdown_cancel">Cancel timer</string>
     <string name="quick_settings_title_aspect_ratio">Aspect Ratio</string>
     <string name="quick_settings_title_flash_mode">Flash Mode</string>
 
@@ -175,4 +186,28 @@
     <string name="pro_wb_kelvin_label">K</string>
     <string name="pro_shadows_label">Shadows</string>
     <string name="focus_exposure_locked_description">Focus and exposure locked</string>
+    <!-- Viewfinder assists (Fase 3) -->
+    <string name="viewfinder_grid_description">Composition grid</string>
+    <string name="viewfinder_level_description">Horizon level, roll %1$d degrees</string>
+    <string name="viewfinder_histogram_description">Luma histogram</string>
+    <string name="viewfinder_zebra_description">%1$d percent of the frame above %2$d percent brightness</string>
+    <string name="viewfinder_low_light_hint">Low light</string>
+    <string name="viewfinder_thermal_warm">Device warm — preview effects paused</string>
+    <string name="viewfinder_thermal_hot">Device hot — quality reduced to cool down</string>
+    <string name="coach_hint_overexposed">Too bright — lower exposure</string>
+    <string name="coach_hint_underexposed">Too dark — raise exposure</string>
+    <string name="coach_hint_low_light">Low light — try Night or hold steady</string>
+    <string name="coach_hint_tilted">Tilted — level the horizon</string>
+    <string name="coach_hint_high_zoom">Heavy digital zoom — step closer</string>
+    <string name="coach_hint_low_contrast">Flat scene — check exposure</string>
+    <string name="top_shot_sharp">Sharp</string>
+    <string name="top_shot_soft">Soft</string>
+    <string name="top_shot_blurry_capture">Capture may be blurry — try again</string>
+    <string name="focus_peaking_badge">Peaking</string>
+    <!-- Mode carousel (Pixel-style shooting mode presets) -->
+    <string name="mode_carousel_photo">PHOTO</string>
+    <string name="mode_carousel_video">VIDEO</string>
+    <string name="mode_carousel_portrait">PORTRAIT</string>
+    <string name="mode_carousel_night">NIGHT</string>
+    <string name="mode_carousel_pro">PRO</string>
 </resources>

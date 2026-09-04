@@ -19,6 +19,7 @@ import com.google.jetpackcamera.core.camera.CameraSystem
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
@@ -43,12 +44,14 @@ import kotlinx.coroutines.launch
  * @param coroutineContext The [CoroutineContext] for launching coroutines.
  * @param onExtensionModePersist Persists the chosen extension mode so it is restored on the next
  * launch. Defaults to a no-op for callers that only need session-scoped behaviour.
+ * @param onCaptureTimerPersist Persists the chosen self-timer. Defaults to a no-op.
  */
 class QuickSettingsControllerImpl(
     private val trackedCaptureUiState: MutableStateFlow<TrackedCaptureUiState>,
     private val cameraSystem: CameraSystem,
     coroutineContext: CoroutineContext,
-    private val onExtensionModePersist: suspend (CameraExtensionMode) -> Unit = {}
+    private val onExtensionModePersist: suspend (CameraExtensionMode) -> Unit = {},
+    private val onCaptureTimerPersist: suspend (CaptureTimer) -> Unit = {}
 ) : QuickSettingsController {
     private val job = Job(parent = coroutineContext[Job.Key])
     private val scope = CoroutineScope(coroutineContext + job)
@@ -100,6 +103,13 @@ class QuickSettingsControllerImpl(
         scope.launch {
             cameraSystem.setExtensionMode(extensionMode)
             onExtensionModePersist(extensionMode)
+        }
+    }
+
+    override fun setCaptureTimer(captureTimer: CaptureTimer) {
+        scope.launch {
+            cameraSystem.setCaptureTimer(captureTimer)
+            onCaptureTimerPersist(captureTimer)
         }
     }
 

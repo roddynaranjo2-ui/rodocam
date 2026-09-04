@@ -17,6 +17,7 @@ package com.google.jetpackcamera.core.camera
 
 import androidx.camera.core.CameraEffect
 import com.google.jetpackcamera.model.CameraEffectTarget
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -34,4 +35,32 @@ interface CameraEffectProvider {
      * @param coroutineScope The [CoroutineScope] in which the effect should run.
      */
     fun create(coroutineScope: CoroutineScope): CameraEffect
+}
+
+/**
+ * A [CameraEffectProvider] whose shader parameters depend on the current
+ * [ViewfinderAssistSettings] (focus peaking, zebras and their thresholds). The camera session
+ * calls [create] with the settings of the session being bound so that toggling a feature or
+ * moving a threshold is reflected on the next rebind.
+ */
+interface ViewfinderAssistAwareEffectProvider : CameraEffectProvider {
+    /**
+     * Creates a new [CameraEffect] configured for [viewfinderAssist].
+     */
+    fun create(
+        coroutineScope: CoroutineScope,
+        viewfinderAssist: ViewfinderAssistSettings
+    ): CameraEffect
+}
+
+/**
+ * Creates the effect, passing the session's [viewfinderAssist] when the provider supports it.
+ */
+fun CameraEffectProvider.create(
+    coroutineScope: CoroutineScope,
+    viewfinderAssist: ViewfinderAssistSettings
+): CameraEffect = if (this is ViewfinderAssistAwareEffectProvider) {
+    create(coroutineScope, viewfinderAssist)
+} else {
+    create(coroutineScope)
 }

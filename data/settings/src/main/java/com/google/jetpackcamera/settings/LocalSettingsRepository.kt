@@ -18,6 +18,7 @@ package com.google.jetpackcamera.settings
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -27,6 +28,7 @@ import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
@@ -106,5 +108,13 @@ class LocalSettingsRepository @Inject constructor(
 
     override suspend fun updateExtensionMode(extensionMode: CameraExtensionMode) {
         settingsDataSource.updateExtensionMode(extensionMode)
+    }
+
+    override suspend fun updateViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings) {
+        settingsDataSource.updateViewfinderAssist(viewfinderAssist)
+    }
+
+    override suspend fun updateCaptureTimer(captureTimer: CaptureTimer) {
+        settingsDataSource.updateCaptureTimer(captureTimer)
     }
 }

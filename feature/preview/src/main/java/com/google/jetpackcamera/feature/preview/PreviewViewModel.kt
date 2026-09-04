@@ -173,7 +173,8 @@ class PreviewViewModel @Inject constructor(
         trackedCaptureUiState = trackedCaptureUiState,
         cameraSystem = cameraSystemRepository.cameraSystem,
         coroutineContext = viewModelScope.coroutineContext,
-        onExtensionModePersist = settingsRepository::updateExtensionMode
+        onExtensionModePersist = settingsRepository::updateExtensionMode,
+        onCaptureTimerPersist = settingsRepository::updateCaptureTimer
     )
 
     /**

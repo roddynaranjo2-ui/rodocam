@@ -16,6 +16,7 @@
 package com.google.jetpackcamera.core.camera
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
@@ -46,10 +47,13 @@ import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraState as CXCameraState
 import androidx.camera.core.ExperimentalZeroShutterLag
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.TorchState
+import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.impl.CameraInfoInternal
 import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -78,21 +82,25 @@ import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.ExposureInfo
 import com.google.jetpackcamera.model.FlashMode
+import com.google.jetpackcamera.model.FrameStats
 import com.google.jetpackcamera.model.Illuminant
 import com.google.jetpackcamera.model.ImageOutputFormat
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostState
+import com.google.jetpackcamera.model.LowLightDetector
 import com.google.jetpackcamera.model.ManualCapabilities
 import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
 import com.google.jetpackcamera.model.TestPattern
+import com.google.jetpackcamera.model.VIEWFINDER_ASSIST_EFFECT_ID
 import com.google.jetpackcamera.model.VideoQuality
 import com.google.jetpackcamera.model.VideoQuality.FHD
 import com.google.jetpackcamera.model.VideoQuality.HD
 import com.google.jetpackcamera.model.VideoQuality.SD
 import com.google.jetpackcamera.model.VideoQuality.UHD
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.model.WhiteBalanceMode
 import com.google.jetpackcamera.model.buildShadowsTonemapCurve
 import com.google.jetpackcamera.model.kelvinToRggbGains
@@ -121,8 +129,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,6 +163,8 @@ internal suspend fun runSingleCameraSession(
         transientSettings.filterNotNull().first().primaryLensFacing.toCameraSelector(),
         sessionSettings.extensionMode
     )
+    // Written by the ImageAnalysis executor, mirrored into CameraState on the session scope.
+    val frameStatsFlow = MutableStateFlow(FrameStats.UNKNOWN)
 
     // only create video use case in standard or video_only (never alongside an extension)
     val videoCaptureUseCase = when (sessionSettings.captureMode) {
@@ -177,7 +187,10 @@ internal suspend fun runSingleCameraSession(
     launch {
         processVideoControlEvents(
             videoCaptureUseCase,
-            captureTypeSuffix = if (sessionSettings.activeCameraEffect != null) {
+            captureTypeSuffix = if (
+                sessionSettings.activeCameraEffect != null &&
+                sessionSettings.activeCameraEffect.id != VIEWFINDER_ASSIST_EFFECT_ID
+            ) {
                 "SingleStream"
             } else {
                 "MultiStream"
@@ -246,8 +259,25 @@ internal suspend fun runSingleCameraSession(
                 }
                 if (cameraEffect == null && !isExtensionEnabled) {
                     sessionSettings.activeCameraEffect?.let { key ->
-                        cameraEffect = cameraEffectProviders[key]?.createEffect(this@sessionScope)
+                        cameraEffect = cameraEffectProviders[key]?.createEffect(
+                            this@sessionScope,
+                            sessionSettings.viewfinderAssist
+                        )
                     }
+                }
+                // Viewfinder overlays (histogram / zebras) share one small ImageAnalysis
+                // stream. Extensions only support Preview + ImageCapture, and the analysis
+                // stream is dropped when the HAL cannot bind it alongside the other use cases.
+                val frameAnalyzer = if (
+                    sessionSettings.viewfinderAssist.needsFrameAnalysis && !isExtensionEnabled
+                ) {
+                    FrameAnalyzer(
+                        frameStats = frameStatsFlow,
+                        zebraThresholdPercent = sessionSettings.viewfinderAssist
+                            .zebraThresholdPercent
+                    )
+                } else {
+                    null
                 }
                 val useCaseGroup = createUseCaseGroup(
                     cameraInfo = cameraInfo,
@@ -263,9 +293,25 @@ internal suspend fun runSingleCameraSession(
                     captureMode = sessionSettings.captureMode,
                     effect = if (isExtensionEnabled) null else cameraEffect,
                     captureResults = captureResults,
-                    isExtensionEnabled = isExtensionEnabled
+                    isExtensionEnabled = isExtensionEnabled,
+                    frameAnalysisUseCase = frameAnalyzer?.let { analyzer ->
+                        createFrameAnalysisUseCase(
+                            executor = backgroundDispatcher.asExecutor(),
+                            analyzer = analyzer
+                        )
+                    }
                 ).apply {
                     getImageCapture()?.let(onImageCaptureCreated)
+                }
+                if (frameAnalyzer == null) {
+                    // Clear stale stats so the overlay does not show a frozen histogram.
+                    currentCameraState.update { old ->
+                        if (old.frameStats != FrameStats.UNKNOWN) {
+                            old.copy(frameStats = FrameStats.UNKNOWN)
+                        } else {
+                            old
+                        }
+                    }
                 }
 
                 cameraProvider.runWith(
@@ -284,6 +330,20 @@ internal suspend fun runSingleCameraSession(
                         camera.cameraInfo.torchState.asFlow().collectLatest { torchState ->
                             currentCameraState.update { old ->
                                 old.copy(isTorchEnabled = torchState == TorchState.ON)
+                            }
+                        }
+                    }
+
+                    if (frameAnalyzer != null) {
+                        launch {
+                            frameStatsFlow.collect { stats ->
+                                currentCameraState.update { old ->
+                                    if (old.frameStats != stats) {
+                                        old.copy(frameStats = stats)
+                                    } else {
+                                        old
+                                    }
+                                }
                             }
                         }
                     }
@@ -436,23 +496,25 @@ internal suspend fun processTransientSettingEvents(
     }
     combine(
         transientSettings.filterNotNull(),
-        currentCameraState.asStateFlow().transform { emit(it.videoRecordingState) }
-    ) { newTransientSettings, videoRecordingState ->
-        return@combine Pair(newTransientSettings, videoRecordingState)
-    }.collect { transientPair ->
-        val newTransientSettings = transientPair.first
-        val videoRecordingState = transientPair.second
+        currentCameraState.asStateFlow()
+            .map { Pair(it.videoRecordingState, it.isLowLightScene) }
+            .distinctUntilChanged()
+    ) { newTransientSettings, recordingAndLowLight ->
+        return@combine Pair(newTransientSettings, recordingAndLowLight)
+    }.collect { (newTransientSettings, recordingAndLowLight) ->
+        val (videoRecordingState, isLowLightScene) = recordingAndLowLight
 
-        // todo(): handle torch on Auto FlashMode
-        // enable torch only while recording is in progress
-        if ((videoRecordingState !is VideoRecordingState.Inactive) &&
-            newTransientSettings.flashMode == FlashMode.ON &&
-            !isFrontFacing
-        ) {
-            setTorch(true)
-        } else {
-            setTorch(false)
-        }
+        // Torch while recording: FlashMode.ON always; FlashMode.AUTO only when AE reports a dark
+        // scene (C-09, Pixel behaviour). Front cameras have no torch (screen flash is used for
+        // stills instead).
+        val torchWanted = videoRecordingState !is VideoRecordingState.Inactive &&
+            !isFrontFacing &&
+            when (newTransientSettings.flashMode) {
+                FlashMode.ON -> true
+                FlashMode.AUTO -> isLowLightScene
+                else -> false
+            }
+        setTorch(torchWanted)
 
         // apply camera torch mode to image capture
         useCaseGroup.getImageCapture()?.let { imageCapture ->
@@ -811,7 +873,8 @@ internal fun createUseCaseGroup(
     captureMode: CaptureMode,
     effect: CameraEffect? = null,
     captureResults: MutableStateFlow<TotalCaptureResult?>? = null,
-    isExtensionEnabled: Boolean = false
+    isExtensionEnabled: Boolean = false,
+    frameAnalysisUseCase: ImageAnalysis? = null
 ): UseCaseGroup {
     val previewUseCase =
         createPreviewUseCase(
@@ -868,8 +931,37 @@ internal fun createUseCaseGroup(
         imageCaptureUseCase?.let { addUseCase(imageCaptureUseCase) }
         videoCaptureUseCase?.let { addUseCase(videoCaptureUseCase) }
 
+        // The analysis stream is optional: only bind it when the device can run it alongside
+        // the other streams (LIMITED devices cannot do Preview + Image + Video + Analysis).
+        frameAnalysisUseCase?.let { analysis ->
+            val others = listOfNotNull(previewUseCase, imageCaptureUseCase, videoCaptureUseCase)
+            if (cameraInfo.supportsCombinationWith(others, analysis)) {
+                addUseCase(analysis)
+            } else {
+                Log.w(TAG, "Skipping frame analysis: use case combination not supported")
+            }
+        }
+
         effect?.let { addEffect(it) }
     }.build()
+}
+
+/**
+ * Returns true if [extra] can be bound together with [useCases] on this camera. Falls back to
+ * `true` when CameraX cannot answer (the bind will still be attempted and any failure surfaces
+ * through the normal session error path).
+ */
+@SuppressLint("RestrictedApi")
+private fun CameraInfo.supportsCombinationWith(
+    useCases: List<UseCase>,
+    extra: UseCase
+): Boolean = try {
+    // CameraInfoInternal is a restricted API; if the cast fails we cannot pre-check.
+    val cameraInternal = this as? CameraInfoInternal
+    cameraInternal?.isUseCaseCombinationSupported(useCases + extra) ?: true
+} catch (e: Exception) {
+    Log.w(TAG, "Could not query use case combination support", e)
+    true
 }
 
 private fun getVideoQualityFromResolution(resolution: Size?): VideoQuality =
@@ -1551,6 +1643,7 @@ private fun Preview.Builder.updateCameraStateWithCaptureResults(
 ): Preview.Builder {
     val isFirstFrameTimestampUpdated = atomic(false)
     val lastExposureInfoPublishNanos = atomic(0L)
+    val lowLightDetector = LowLightDetector()
     val targetCameraLogicalId = Camera2CameraInfo.from(targetCameraInfo).cameraId
     Camera2Interop.Extender(this).setSessionCaptureCallback(
         object : CameraCaptureSession.CaptureCallback() {
@@ -1636,7 +1729,7 @@ private fun Preview.Builder.updateCameraStateWithCaptureResults(
                     // Publish stabilization state
                     publishStabilizationMode(result)
                     // Publish live ISO / shutter / focus readout for the Pro overlay
-                    publishExposureInfo(result, lastExposureInfoPublishNanos)
+                    publishExposureInfo(result, lastExposureInfoPublishNanos, lowLightDetector)
                 } catch (e: Exception) {
                     // Never let an exception escape a Camera2 callback (it would kill the
                     // camera thread), but don't hide it either.
@@ -1662,15 +1755,28 @@ private const val EXPOSURE_INFO_MIN_INTERVAL_NANOS = 125_000_000L
 context(CameraSessionContext)
 private fun publishExposureInfo(
     result: TotalCaptureResult,
-    lastPublishNanos: AtomicLong
+    lastPublishNanos: AtomicLong,
+    lowLightDetector: LowLightDetector
 ) {
     val exposureInfo = ExposureInfo(
         iso = result.get(CaptureResult.SENSOR_SENSITIVITY),
         exposureTimeNanos = result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
         focusDistanceDiopters = result.get(CaptureResult.LENS_FOCUS_DISTANCE),
         isAeLocked = result.get(CaptureResult.CONTROL_AE_LOCK) ?: false,
-        isAwbLocked = result.get(CaptureResult.CONTROL_AWB_LOCK) ?: false
+        isAwbLocked = result.get(CaptureResult.CONTROL_AWB_LOCK) ?: false,
+        apertureFNumber = result.get(CaptureResult.LENS_APERTURE)
     )
+    // Scene brightness with hysteresis (drives torch-on-AUTO for video and the Night hint).
+    val isLowLight = lowLightDetector.update(exposureInfo)
+    if (currentCameraState.value.isLowLightScene != isLowLight) {
+        currentCameraState.update { state ->
+            if (state.isLowLightScene != isLowLight) {
+                state.copy(isLowLightScene = isLowLight)
+            } else {
+                state
+            }
+        }
+    }
     val old = currentCameraState.value.exposureInfo
     if (old == exposureInfo) return
 
@@ -1727,5 +1833,7 @@ private fun AudioStats.toAudioStreamState(): AudioStreamState = when (this.audio
     else -> AudioStreamState.Unknown
 }
 
-private fun Provider<CameraEffectProvider>.createEffect(scope: CoroutineScope): CameraEffect =
-    get().create(scope)
+private fun Provider<CameraEffectProvider>.createEffect(
+    scope: CoroutineScope,
+    viewfinderAssist: ViewfinderAssistSettings
+): CameraEffect = get().create(scope, viewfinderAssist)

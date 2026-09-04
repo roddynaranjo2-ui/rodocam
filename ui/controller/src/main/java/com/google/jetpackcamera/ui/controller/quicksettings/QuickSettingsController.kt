@@ -18,6 +18,7 @@ package com.google.jetpackcamera.ui.controller.quicksettings
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
@@ -80,4 +81,11 @@ interface QuickSettingsController {
      * @param extensionMode The extension mode to activate; [CameraExtensionMode.NONE] disables it.
      */
     fun setExtensionMode(extensionMode: CameraExtensionMode)
+
+    /**
+     * Sets the self-timer duration (Off / 3 s / 10 s) applied before photos and recordings.
+     *
+     * @param captureTimer The timer to use.
+     */
+    fun setCaptureTimer(captureTimer: CaptureTimer)
 }

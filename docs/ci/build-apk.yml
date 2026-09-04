@@ -81,9 +81,11 @@ jobs:
           ./gradlew --stacktrace --console=plain --continue
           :core:model:testStableDebugUnitTest
           :core:camera:testStableDebugUnitTest
+          :core:camera:effects:single-stream:testDebugUnitTest
           :core:camera:postprocess:heic:testDebugUnitTest
           :feature:preview:testStableDebugUnitTest
           :ui:components:capture:testStableDebugUnitTest
+          :ui:uistate:capture:testStableDebugUnitTest
           :ui:uistateadapter:capture:testStableDebugUnitTest
           :ui:controller:impl:testStableDebugUnitTest
 
@@ -153,6 +155,18 @@ jobs:
           RODOCAM_VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew :app:assembleStableRelease --stacktrace --console=plain
 
+      # Play Store necesita un AAB (Play App Signing). Se genera solo cuando hay keystore, con
+      # la misma firma y versionCode que el APK release.
+      - name: Build Release AAB (Play Store)
+        if: steps.keystore.outcome == 'success'
+        env:
+          RODOCAM_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
+          RODOCAM_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RODOCAM_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          RODOCAM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RODOCAM_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew :app:bundleStableRelease --stacktrace --console=plain
+
       - name: Verify generated APK
         run: |
           find app/build/outputs -type f \( -name '*.apk' -o -name 'mapping.txt' \) -print
@@ -174,6 +188,15 @@ jobs:
           path: |
             app/build/outputs/apk/stable/release/*.apk
             app/build/outputs/mapping/stableRelease/mapping.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload Release AAB
+        if: steps.keystore.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RodoCam-stable-release-AAB
+          path: 'app/build/outputs/bundle/stableRelease/*.aab'
           if-no-files-found: error
           retention-days: 90
 

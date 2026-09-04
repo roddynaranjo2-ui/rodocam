@@ -17,6 +17,7 @@ package com.google.jetpackcamera.ui.controller.testing
 
 import android.content.ContentResolver
 import com.google.jetpackcamera.model.CaptureEvent
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.ui.controller.CaptureController
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -31,6 +32,8 @@ import kotlinx.coroutines.channels.ReceiveChannel
  * @param setLockedRecordingAction The action to perform when [setLockedRecording] is called.
  * @param setPausedAction The action to perform when [setPaused] is called.
  * @param setAudioEnabledAction The action to perform when [setAudioEnabled] is called.
+ * @param cancelCountdownAction The action to perform when [cancelCountdown] is called.
+ * @param countingDown The value returned by [isCountingDown].
  */
 class FakeCaptureController(
     override val captureEvents: ReceiveChannel<CaptureEvent> = Channel(Channel.UNLIMITED),
@@ -39,8 +42,14 @@ class FakeCaptureController(
     var stopVideoRecordingAction: () -> Unit = {},
     var setLockedRecordingAction: (Boolean) -> Unit = {},
     var setPausedAction: (Boolean) -> Unit = {},
-    var setAudioEnabledAction: (Boolean) -> Unit = {}
+    var setAudioEnabledAction: (Boolean) -> Unit = {},
+    var cancelCountdownAction: () -> Unit = {},
+    var countingDown: Boolean = false
 ) : CaptureController {
+    /** Timer passed to the last delayed capture request, or null if none was made. */
+    var lastCaptureTimer: CaptureTimer? = null
+        private set
+
     /**
      * Simulates a [CaptureEvent] being emitted by the controller.
      * This relies on the [captureEvents] instance being a [Channel].
@@ -54,9 +63,25 @@ class FakeCaptureController(
         captureImageAction(contentResolver)
     }
 
+    override fun captureImage(contentResolver: ContentResolver, captureTimer: CaptureTimer) {
+        lastCaptureTimer = captureTimer
+        captureImageAction(contentResolver)
+    }
+
     override fun startVideoRecording() {
         startVideoRecordingAction()
     }
+
+    override fun startVideoRecording(captureTimer: CaptureTimer) {
+        lastCaptureTimer = captureTimer
+        startVideoRecordingAction()
+    }
+
+    override fun cancelCountdown() {
+        cancelCountdownAction()
+    }
+
+    override fun isCountingDown(): Boolean = countingDown
 
     override fun stopVideoRecording() {
         stopVideoRecordingAction()

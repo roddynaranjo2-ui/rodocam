@@ -17,9 +17,11 @@ package com.google.jetpackcamera.core.camera
 
 import android.net.Uri
 import com.google.jetpackcamera.model.ExposureInfo
+import com.google.jetpackcamera.model.FrameStats
 import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostState
 import com.google.jetpackcamera.model.StabilizationMode
+import com.google.jetpackcamera.model.ThermalStatus
 import com.google.jetpackcamera.model.VideoQuality
 
 /**
@@ -52,7 +54,25 @@ data class CameraState(
     val videoQualityInfo: VideoQualityInfo = VideoQualityInfo(VideoQuality.UNSPECIFIED, 0, 0),
     val focusState: FocusState = FocusState.Unspecified,
     /** Real-time ISO / shutter / focus readout from the latest `TotalCaptureResult`. */
-    val exposureInfo: ExposureInfo = ExposureInfo.UNKNOWN
+    val exposureInfo: ExposureInfo = ExposureInfo.UNKNOWN,
+    /**
+     * Per-frame luma statistics (histogram, clipping) from the analysis stream. Stays
+     * [FrameStats.UNKNOWN] while no overlay requires frame analysis.
+     */
+    val frameStats: FrameStats = FrameStats.UNKNOWN,
+    /**
+     * True when auto-exposure indicates a dark scene (EV100 below ~4 with hysteresis). Drives
+     * the automatic torch for video with [com.google.jetpackcamera.model.FlashMode.AUTO] and the
+     * Night-mode hint.
+     */
+    val isLowLightScene: Boolean = false,
+    /**
+     * Device thermal status from the platform. When it reaches
+     * [ThermalStatus.MODERATE] or above the session is re-bound with the
+     * [com.google.jetpackcamera.model.ThermalPolicy] restrictions applied (lower fps, no GPU
+     * assist shader, lower video quality) until the device cools down.
+     */
+    val thermalStatus: ThermalStatus = ThermalStatus.UNKNOWN
 )
 
 /**

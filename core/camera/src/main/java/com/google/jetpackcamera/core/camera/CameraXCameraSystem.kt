@@ -54,6 +54,7 @@ import com.google.jetpackcamera.model.CameraEffectTarget
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DNG_FILE_EXTENSION
 import com.google.jetpackcamera.model.DNG_MIME_TYPE
@@ -77,8 +78,12 @@ import com.google.jetpackcamera.model.TARGET_FPS_30
 import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
 import com.google.jetpackcamera.model.TestPattern
+import com.google.jetpackcamera.model.ThermalPolicy
+import com.google.jetpackcamera.model.ThermalStatus
 import com.google.jetpackcamera.model.UNLIMITED_VIDEO_DURATION
+import com.google.jetpackcamera.model.VIEWFINDER_ASSIST_EFFECT_ID
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.model.ZoomStrategy
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import com.google.jetpackcamera.settings.model.CameraConstraints
@@ -97,6 +102,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -126,7 +132,8 @@ class CameraXCameraSystem(
     val imagePostProcessors:
     Map<ImagePostProcessorFeatureKey, @JvmSuppressWildcards Provider<ImagePostProcessor>>,
     private val cameraEffectProviders:
-    Map<CameraEffectFeatureKey, @JvmSuppressWildcards Provider<CameraEffectProvider>>
+    Map<CameraEffectFeatureKey, @JvmSuppressWildcards Provider<CameraEffectProvider>>,
+    private val thermalMonitor: ThermalMonitor = ThermalMonitor.create(application)
 ) : CameraSystem {
     /**
      * Set once [initialize] succeeds. Kept nullable (instead of `lateinit`) so that any public
@@ -452,9 +459,23 @@ class CameraXCameraSystem(
             handleLowLightBoostErrors()
         }
 
+        // Thermal status drives a load-shedding policy layered over the user's settings. It is
+        // combined into the session settings flow so a change of tier re-binds the session with
+        // the restrictions applied; persisted preferences are never modified.
+        val thermalPolicy = MutableStateFlow(ThermalPolicy.forStatus(ThermalStatus.UNKNOWN))
+        launch {
+            thermalMonitor.thermalStatus().collect { status ->
+                publishThermalStatus(status)
+                thermalPolicy.value = ThermalPolicy.forStatus(status)
+            }
+        }
+
         val transientSettings = MutableStateFlow<TransientSessionSettings?>(null)
         currentSettings
             .filterNotNull()
+            .combine(thermalPolicy) { settings, policy ->
+                applyThermalPolicy(settings, policy)
+            }
             .map { currentCameraSettings ->
                 transientSettings.value = TransientSessionSettings(
                     isAudioEnabled = currentCameraSettings.audioEnabled,
@@ -487,8 +508,13 @@ class CameraXCameraSystem(
                             concurrentCameraMode = currentCameraSettings.concurrentCameraMode
                         )
 
+                        // An explicitly selected effect wins; otherwise the preview-only
+                        // viewfinder assist shader (focus peaking / zebras) is used when needed.
                         val activeCameraEffect = cameraEffectProviders.keys.firstOrNull {
                             it.id == currentCameraSettings.selectedCameraEffect
+                        } ?: cameraEffectProviders.keys.firstOrNull {
+                            currentCameraSettings.viewfinderAssist.needsShaderEffect &&
+                                it.id == VIEWFINDER_ASSIST_EFFECT_ID
                         }
 
                         PerpetualSessionSettings.SingleCamera(
@@ -501,7 +527,8 @@ class CameraXCameraSystem(
                             videoQuality = currentCameraSettings.videoQuality,
                             imageFormat = currentCameraSettings.imageFormat,
                             lowLightBoostPriority = currentCameraSettings.lowLightBoostPriority,
-                            extensionMode = currentCameraSettings.extensionMode
+                            extensionMode = currentCameraSettings.extensionMode,
+                            viewfinderAssist = currentCameraSettings.viewfinderAssist
                         )
                     }
 
@@ -838,6 +865,16 @@ class CameraXCameraSystem(
                 ?.tryApplyImageFormatConstraints()
                 ?.tryApplyCaptureModeConstraints()
         }
+    }
+
+    override suspend fun setViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings) {
+        currentSettings.update { old ->
+            old?.copy(viewfinderAssist = viewfinderAssist.sanitized())
+        }
+    }
+
+    override suspend fun setCaptureTimer(captureTimer: CaptureTimer) {
+        currentSettings.update { old -> old?.copy(captureTimer = captureTimer) }
     }
 
     private fun CameraAppSettings.isSingleStreamLayout(): Boolean {
@@ -1270,6 +1307,35 @@ class CameraXCameraSystem(
                 ?.tryApplyImageFormatConstraints()
                 ?.tryApplyConcurrentCameraModeConstraints()
         }
+    }
+
+    private fun publishThermalStatus(status: ThermalStatus) {
+        currentCameraState.update { old ->
+            if (old.thermalStatus != status) old.copy(thermalStatus = status) else old
+        }
+    }
+
+    /**
+     * Returns [settings] with the [policy] restrictions applied for the current lens: frame rate
+     * cap (respecting the lens' supported fixed rates), video quality cap and shader assists.
+     */
+    internal fun applyThermalPolicy(
+        settings: CameraAppSettings,
+        policy: ThermalPolicy
+    ): CameraAppSettings {
+        if (!policy.isRestricting) return settings
+        val supportedRates = systemConstraints.perLensConstraints[settings.cameraLensFacing]
+            ?.supportedFixedFrameRates
+            ?: emptySet()
+        val restricted = settings.copy(
+            targetFrameRate = policy.applyTargetFrameRate(settings.targetFrameRate, supportedRates),
+            videoQuality = policy.applyVideoQuality(settings.videoQuality),
+            viewfinderAssist = policy.applyViewfinderAssist(settings.viewfinderAssist)
+        )
+        if (restricted != settings) {
+            Log.i(TAG, "Thermal ${policy.status}: applying load-shedding policy $policy")
+        }
+        return restricted
     }
 
     private suspend fun handleLowLightBoostErrors() {

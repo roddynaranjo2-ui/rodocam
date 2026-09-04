@@ -30,6 +30,7 @@ import com.google.jetpackcamera.model.ManualControls
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 
 /**
  * Camera settings that persist as long as a camera is running.
@@ -51,7 +52,12 @@ internal sealed interface PerpetualSessionSettings {
         val videoQuality: VideoQuality,
         val imageFormat: ImageOutputFormat,
         val lowLightBoostPriority: LowLightBoostPriority,
-        val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE
+        val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE,
+        /**
+         * Viewfinder assists (histogram / zebras) drive whether an ImageAnalysis use case is
+         * bound, so toggling them rebinds the session.
+         */
+        val viewfinderAssist: ViewfinderAssistSettings = ViewfinderAssistSettings.DEFAULT
     ) : PerpetualSessionSettings
 
     /**

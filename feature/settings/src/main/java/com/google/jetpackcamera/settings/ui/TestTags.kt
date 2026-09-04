@@ -131,3 +131,16 @@ const val BTN_OPEN_DIALOG_SETTING_DARK_MODE_TAG = "btn_open_dialog_setting_dark_
 const val BTN_DIALOG_DARK_MODE_OPTION_ON_TAG = "btn_dialog_dark_mode_option_on_tag"
 const val BTN_DIALOG_DARK_MODE_OPTION_OFF_TAG = "btn_dialog_dark_mode_option_off_tag"
 const val BTN_DIALOG_DARK_MODE_OPTION_SYSTEM_TAG = "btn_dialog_dark_mode_option_system_tag"
+
+// Viewfinder assists
+const val BTN_OPEN_DIALOG_SETTING_GRID_TAG = "btn_open_dialog_setting_grid_tag"
+const val BTN_DIALOG_GRID_OPTION_PREFIX = "btn_dialog_grid_option_"
+const val BTN_SWITCH_SETTING_LEVEL_TAG = "btn_switch_setting_level_tag"
+const val BTN_SWITCH_SETTING_HISTOGRAM_TAG = "btn_switch_setting_histogram_tag"
+const val BTN_OPEN_DIALOG_SETTING_ZEBRAS_TAG = "btn_open_dialog_setting_zebras_tag"
+const val BTN_SWITCH_SETTING_ZEBRAS_TAG = "btn_switch_setting_zebras_tag"
+const val SLIDER_SETTING_ZEBRA_THRESHOLD_TAG = "slider_setting_zebra_threshold_tag"
+const val BTN_SWITCH_SETTING_HAPTICS_TAG = "btn_switch_setting_haptics_tag"
+const val BTN_SWITCH_SETTING_COACH_TAG = "btn_switch_setting_coach_tag"
+const val BTN_SWITCH_SETTING_FOCUS_PEAKING_TAG = "btn_switch_setting_focus_peaking_tag"
+const val BTN_SWITCH_SETTING_TOP_SHOT_TAG = "btn_switch_setting_top_shot_tag"

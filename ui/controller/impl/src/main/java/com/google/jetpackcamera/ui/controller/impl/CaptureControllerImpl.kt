@@ -22,11 +22,14 @@ import androidx.tracing.traceAsync
 import com.google.jetpackcamera.core.camera.CameraSystem
 import com.google.jetpackcamera.core.camera.OnVideoRecordEvent
 import com.google.jetpackcamera.model.CaptureEvent
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ExternalCaptureMode
 import com.google.jetpackcamera.model.ImageCaptureEvent
 import com.google.jetpackcamera.model.IntProgress
+import com.google.jetpackcamera.model.PendingCaptureAction
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.SaveMode
+import com.google.jetpackcamera.model.TimerCountdown
 import com.google.jetpackcamera.model.VideoCaptureEvent
 import com.google.jetpackcamera.ui.controller.CaptureController
 import com.google.jetpackcamera.ui.controller.ImageWellController
@@ -39,6 +42,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
@@ -61,6 +65,8 @@ private const val IMAGE_CAPTURE_TRACE = "JCA Image Capture"
  * @param onImageCached Callback invoked when an image is saved to cache.
  * @param onVideoCached Callback invoked when a video is saved to cache.
  * @param coroutineContext The [CoroutineContext] for launching coroutines.
+ * @param onCountdownTick Invoked on every countdown step (including the first) and, with `null`,
+ * when the countdown finishes or is cancelled; lets the UI play haptics/sounds.
  */
 class CaptureControllerImpl(
     private val trackedCaptureUiState: MutableStateFlow<TrackedCaptureUiState>,
@@ -72,12 +78,14 @@ class CaptureControllerImpl(
     private val imageWellController: ImageWellController? = null,
     private val onImageCached: ((Uri) -> Unit)? = null,
     private val onVideoCached: ((Uri) -> Unit)? = null,
-    coroutineContext: CoroutineContext
+    coroutineContext: CoroutineContext,
+    private val onCountdownTick: (TimerCountdown?) -> Unit = {}
 ) : CaptureController {
 
     private val traceCookie = atomic(0)
     private val videoCaptureStartedCount = atomic(0)
     private var recordingJob: Job? = null
+    private var countdownJob: Job? = null
     private val job = Job(parent = coroutineContext[Job])
     private val scope = CoroutineScope(coroutineContext + job)
 
@@ -132,6 +140,79 @@ class CaptureControllerImpl(
                 }
             )
         }
+    }
+
+    override fun captureImage(contentResolver: ContentResolver, captureTimer: CaptureTimer) {
+        runAfterCountdown(captureTimer, PendingCaptureAction.IMAGE) {
+            captureImage(contentResolver)
+        }
+    }
+
+    override fun startVideoRecording(captureTimer: CaptureTimer) {
+        runAfterCountdown(captureTimer, PendingCaptureAction.VIDEO) {
+            startVideoRecording()
+        }
+    }
+
+    override fun cancelCountdown() {
+        val job = countdownJob ?: return
+        Log.d(TAG, "cancelCountdown")
+        // Cancelling synchronously clears the published countdown; the coroutine's own
+        // CancellationException path is then a no-op because the state is already idle.
+        countdownJob = null
+        job.cancel()
+        clearCountdown()
+    }
+
+    override fun isCountingDown(): Boolean = countdownJob?.isActive == true
+
+    /**
+     * Runs [action] immediately when [captureTimer] is off, otherwise after publishing a
+     * one-second-step countdown through [trackedCaptureUiState]. A new request while a countdown
+     * is running replaces it (Pixel Camera restarts the timer rather than queueing captures).
+     */
+    private fun runAfterCountdown(
+        captureTimer: CaptureTimer,
+        pendingAction: PendingCaptureAction,
+        action: () -> Unit
+    ) {
+        val initial = TimerCountdown.start(captureTimer, pendingAction)
+        if (initial == null) {
+            cancelCountdown()
+            action()
+            return
+        }
+        cancelCountdown()
+        countdownJob = scope.launch {
+            var current: TimerCountdown? = initial
+            try {
+                while (current != null) {
+                    publishCountdown(current)
+                    delay(CaptureTimer.MILLIS_PER_SECOND)
+                    current = current.tick()
+                }
+                clearCountdown()
+                action()
+            } catch (exception: CancellationException) {
+                // Scope teardown (e.g. ViewModel cleared) while counting down.
+                if (trackedCaptureUiState.value.timerCountdown != null) clearCountdown()
+                throw exception
+            }
+        }
+    }
+
+    private fun publishCountdown(countdown: TimerCountdown) {
+        trackedCaptureUiState.update { old -> old.copy(timerCountdown = countdown) }
+        onCountdownTick(countdown)
+    }
+
+    private fun clearCountdown() {
+        countdownJob = null
+        val wasCountingDown = trackedCaptureUiState.value.timerCountdown != null
+        trackedCaptureUiState.update { old ->
+            if (old.timerCountdown == null) old else old.copy(timerCountdown = null)
+        }
+        if (wasCountingDown) onCountdownTick(null)
     }
 
     override fun startVideoRecording() {

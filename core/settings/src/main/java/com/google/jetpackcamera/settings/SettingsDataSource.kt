@@ -18,6 +18,7 @@ package com.google.jetpackcamera.settings
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -27,6 +28,7 @@ import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import kotlinx.coroutines.flow.Flow
 
@@ -124,4 +126,12 @@ interface SettingsDataSource {
      * Updates the vendor extension mode (Night, Bokeh, HDR, Face retouch) used by default.
      */
     suspend fun updateExtensionMode(extensionMode: CameraExtensionMode)
+
+    /**
+     * Updates the viewfinder assistance overlays (grid, level, histogram, zebras) and haptics.
+     */
+    suspend fun updateViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings)
+
+    /** Persists the self-timer duration. */
+    suspend fun updateCaptureTimer(captureTimer: CaptureTimer)
 }
