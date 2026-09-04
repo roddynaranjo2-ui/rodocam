@@ -23,6 +23,7 @@ import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.model.DynamicRange
@@ -35,6 +36,7 @@ import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import com.google.jetpackcamera.settings.model.CameraSystemConstraints
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -145,6 +147,20 @@ interface CameraSystem {
      * extension resets manual controls and forces JPEG/SDR output.
      */
     suspend fun setExtensionMode(extensionMode: CameraExtensionMode)
+
+    /**
+     * Updates viewfinder assists (composition grid, level, histogram, zebras, haptics).
+     *
+     * Enabling the histogram or zebras binds an ImageAnalysis use case to feed
+     * [CameraState.frameStats]; other assists are purely UI-side.
+     */
+    suspend fun setViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings)
+
+    /**
+     * Sets the self-timer (Off / 3 s / 10 s) that runs before a photo or recording starts.
+     * Purely a session setting: the countdown itself is driven by the UI layer.
+     */
+    suspend fun setCaptureTimer(captureTimer: CaptureTimer)
 
     /**
      * Returns a [StateFlow] of the current [CameraState].
@@ -357,6 +373,12 @@ interface CameraSystem {
                 cameraSystem::setConcurrentCameraMode
             )
             applyDiff(new, CameraAppSettings::extensionMode, cameraSystem::setExtensionMode)
+            applyDiff(
+                new,
+                CameraAppSettings::viewfinderAssist,
+                cameraSystem::setViewfinderAssist
+            )
+            applyDiff(new, CameraAppSettings::captureTimer, cameraSystem::setCaptureTimer)
         }
     }
 }

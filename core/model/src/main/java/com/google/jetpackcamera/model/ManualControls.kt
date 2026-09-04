@@ -254,13 +254,16 @@ data class ManualCapabilities(
  * @property focusDistanceDiopters Current `LENS_FOCUS_DISTANCE`, or null if not reported.
  * @property isAeLocked Current `CONTROL_AE_LOCK` state.
  * @property isAwbLocked Current `CONTROL_AWB_LOCK` state.
+ * @property apertureFNumber Current `LENS_APERTURE` (f-number), or null if not reported. Used
+ *   together with ISO and shutter to estimate scene brightness ([SceneBrightness.ev100]).
  */
 data class ExposureInfo(
     val iso: Int? = null,
     val exposureTimeNanos: Long? = null,
     val focusDistanceDiopters: Float? = null,
     val isAeLocked: Boolean = false,
-    val isAwbLocked: Boolean = false
+    val isAwbLocked: Boolean = false,
+    val apertureFNumber: Float? = null
 ) {
     companion object {
         val UNKNOWN = ExposureInfo()

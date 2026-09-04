@@ -29,6 +29,7 @@ import com.google.jetpackcamera.model.TARGET_FPS_30
 import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.UNLIMITED_VIDEO_DURATION
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.DisabledRationale.DeviceUnsupportedRationale
 import com.google.jetpackcamera.settings.DisabledRationale.LensUnsupportedRationale
 import com.google.jetpackcamera.settings.model.DEFAULT_CAMERA_APP_SETTINGS
@@ -66,6 +67,9 @@ sealed interface SettingsUiState {
         val imageFormatUiState: ImageFormatUiState = ImageFormatUiState.Enabled(
             currentImageFormat = ImageOutputFormat.JPEG,
             optionStates = mapOf(ImageOutputFormat.JPEG to SingleSelectableState.Selectable)
+        ),
+        val viewfinderAssistUiState: ViewfinderAssistUiState = ViewfinderAssistUiState.Enabled(
+            ViewfinderAssistSettings.DEFAULT
         )
     ) : SettingsUiState
 }
@@ -223,6 +227,12 @@ sealed interface StabilizationUiState {
 
     // Stabilization selection completely disabled. Cannot open dialog.
     data class Disabled(val disabledRationale: DisabledRationale) : StabilizationUiState
+}
+
+/** Viewfinder assists (grid, level, histogram, zebras, haptics). Always available. */
+sealed interface ViewfinderAssistUiState {
+    data class Enabled(val settings: ViewfinderAssistSettings) : ViewfinderAssistUiState
+    data object Disabled : ViewfinderAssistUiState
 }
 
 sealed interface AudioUiState {

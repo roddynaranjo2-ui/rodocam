@@ -17,6 +17,7 @@ package com.google.jetpackcamera.ui.controller
 
 import android.content.ContentResolver
 import com.google.jetpackcamera.model.CaptureEvent
+import com.google.jetpackcamera.model.CaptureTimer
 import kotlinx.coroutines.channels.ReceiveChannel
 
 /**
@@ -36,9 +37,39 @@ interface CaptureController {
     fun captureImage(contentResolver: ContentResolver)
 
     /**
+     * Captures a single image after the self-timer [captureTimer] elapses.
+     *
+     * When the timer is [CaptureTimer.OFF] this behaves exactly like [captureImage]. Otherwise a
+     * countdown is published through the tracked UI state and the picture is taken when it
+     * reaches zero, unless [cancelCountdown] is called first.
+     *
+     * @param contentResolver The [ContentResolver] to use for saving the image.
+     * @param captureTimer The self-timer duration to wait before capturing.
+     */
+    fun captureImage(contentResolver: ContentResolver, captureTimer: CaptureTimer)
+
+    /**
      * Starts video recording.
      */
     fun startVideoRecording()
+
+    /**
+     * Starts video recording after the self-timer [captureTimer] elapses; see
+     * [captureImage] with a timer for the countdown semantics.
+     *
+     * @param captureTimer The self-timer duration to wait before recording.
+     */
+    fun startVideoRecording(captureTimer: CaptureTimer)
+
+    /**
+     * Cancels a pending self-timer countdown, if any. The delayed capture never happens.
+     */
+    fun cancelCountdown()
+
+    /**
+     * Whether a self-timer countdown is currently running.
+     */
+    fun isCountingDown(): Boolean
 
     /**
      * Stops the current video recording.

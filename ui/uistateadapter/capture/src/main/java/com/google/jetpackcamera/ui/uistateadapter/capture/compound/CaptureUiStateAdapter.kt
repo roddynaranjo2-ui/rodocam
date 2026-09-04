@@ -22,8 +22,10 @@ import com.google.jetpackcamera.settings.ConstraintsRepository
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.AudioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureButtonUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureModeCarouselUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
 import com.google.jetpackcamera.ui.uistate.capture.ElapsedTimeUiState
 import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
@@ -35,6 +37,7 @@ import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
 import com.google.jetpackcamera.ui.uistate.capture.ScreenFlashUiState
 import com.google.jetpackcamera.ui.uistate.capture.StabilizationUiState
 import com.google.jetpackcamera.ui.uistate.capture.TrackedCaptureUiState
+import com.google.jetpackcamera.ui.uistate.capture.ViewfinderAssistUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomUiState
 import com.google.jetpackcamera.ui.uistate.capture.compound.CaptureUiState
@@ -104,6 +107,11 @@ fun captureUiState(
             cameraAppSettings,
             systemConstraints
         )
+        val captureTimerUiState = CaptureTimerUiState.from(
+            cameraAppSettings,
+            roundedCameraState,
+            trackedUiState.timerCountdown
+        )
 
         flashModeUiState = flashModeUiState.let {
             it?.updateFrom(
@@ -119,6 +127,13 @@ fun captureUiState(
             )
                 ?: FocusMeteringUiState.from(roundedCameraState)
         }
+        val manualControlsUiState = ManualControlsUiState.from(
+            cameraAppSettings,
+            systemConstraints,
+            roundedCameraState,
+            externalCaptureMode,
+            trackedUiState.isProPanelOpen
+        )
         CaptureUiState.Ready(
             externalCaptureMode = externalCaptureMode,
             videoRecordingState = roundedVideoRecordingState,
@@ -137,7 +152,8 @@ fun captureUiState(
                 aspectRatioUiState,
                 hdrUiState,
                 trackedUiState.isQuickSettingsOpen,
-                extensionModeUiState
+                extensionModeUiState,
+                captureTimerUiState
             ),
             sessionFirstFrameTimestamp = roundedCameraState.sessionFirstFrameTimestamp,
             stabilizationUiState = StabilizationUiState.from(
@@ -180,12 +196,20 @@ fun captureUiState(
                 roundedVideoRecordingState
             ),
             screenFlashUiState = ScreenFlashUiState.from(trackedUiState),
-            manualControlsUiState = ManualControlsUiState.from(
+            manualControlsUiState = manualControlsUiState,
+            viewfinderAssistUiState = ViewfinderAssistUiState.from(
                 cameraAppSettings,
-                systemConstraints,
+                roundedCameraState,
+                systemConstraints
+            ),
+            captureTimerUiState = captureTimerUiState,
+            captureModeCarouselUiState = CaptureModeCarouselUiState.from(
+                cameraAppSettings,
                 roundedCameraState,
                 externalCaptureMode,
-                trackedUiState.isProPanelOpen
+                captureModeUiState,
+                extensionModeUiState,
+                manualControlsUiState
             )
         )
     }

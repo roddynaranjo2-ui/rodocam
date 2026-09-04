@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.DEFAULT_HDR_DYNAMIC_RANGE
 import com.google.jetpackcamera.model.DEFAULT_HDR_IMAGE_OUTPUT
 import com.google.jetpackcamera.model.DynamicRange
@@ -86,6 +87,9 @@ import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_FLASH_O
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_FLASH_OPTION_ON
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_HDR_OPTION_OFF
 import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_HDR_OPTION_ON
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_TIMER_OPTION_10S
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_TIMER_OPTION_3S
+import com.google.jetpackcamera.ui.components.capture.BTN_QUICK_SETTINGS_TIMER_OPTION_OFF
 import com.google.jetpackcamera.ui.components.capture.QUICK_SETTINGS_BOTTOM_SHEET
 import com.google.jetpackcamera.ui.components.capture.QUICK_SETTINGS_DROP_DOWN
 import com.google.jetpackcamera.ui.components.capture.QUICK_SETTINGS_RATIO_1_1_BUTTON
@@ -97,9 +101,11 @@ import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_CAPTURE
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_EXTENSION_MODE
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_FLASH
 import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_HDR
+import com.google.jetpackcamera.ui.components.capture.ROW_QUICK_SETTINGS_TIMER
 import com.google.jetpackcamera.ui.components.capture.SETTINGS_BUTTON
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraAspectRatio
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraCaptureMode
+import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraCaptureTimer
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraDynamicRange
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraExtensionModeEnum
 import com.google.jetpackcamera.ui.components.capture.quicksettings.CameraFlashMode
@@ -107,6 +113,7 @@ import com.google.jetpackcamera.ui.components.capture.quicksettings.QuickSetting
 import com.google.jetpackcamera.ui.uistate.SingleSelectableUiState
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
 import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
@@ -364,6 +371,46 @@ internal fun ExtensionModeRow(
         },
         isItemEnabled = { extensionModeUiState.isSupported }
     )
+}
+
+/**
+ * Self-timer selector (Off / 3 s / 10 s), mirroring Pixel Camera's timer quick setting.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun TimerRow(
+    modifier: Modifier = Modifier,
+    onSetCaptureTimer: (CaptureTimer) -> Unit,
+    captureTimerUiState: CaptureTimerUiState
+) {
+    if (captureTimerUiState !is CaptureTimerUiState.Available) return
+    val items = remember(captureTimerUiState.availableTimers) {
+        captureTimerUiState.availableTimers.map { SingleSelectableUiState.SelectableUi(it) }
+    }
+    val selectedEnum = captureTimerUiState.selectedTimer.toQuickSettingsEnum()
+
+    QuickSettingsListRow(
+        modifier = modifier.testTag(ROW_QUICK_SETTINGS_TIMER),
+        title = stringResource(id = R.string.quick_settings_title_timer),
+        stateSubtitle = stringResource(id = selectedEnum.getTextResId()),
+        items = items,
+        selectedItem = captureTimerUiState.selectedTimer,
+        onItemClick = onSetCaptureTimer,
+        enumMapper = { it.toQuickSettingsEnum() },
+        testTagMapper = { timer ->
+            when (timer) {
+                CaptureTimer.OFF -> BTN_QUICK_SETTINGS_TIMER_OPTION_OFF
+                CaptureTimer.THREE_SECONDS -> BTN_QUICK_SETTINGS_TIMER_OPTION_3S
+                CaptureTimer.TEN_SECONDS -> BTN_QUICK_SETTINGS_TIMER_OPTION_10S
+            }
+        }
+    )
+}
+
+private fun CaptureTimer.toQuickSettingsEnum(): CameraCaptureTimer = when (this) {
+    CaptureTimer.OFF -> CameraCaptureTimer.OFF
+    CaptureTimer.THREE_SECONDS -> CameraCaptureTimer.THREE_SECONDS
+    CaptureTimer.TEN_SECONDS -> CameraCaptureTimer.TEN_SECONDS
 }
 
 private fun CameraExtensionMode.toQuickSettingsEnum(): CameraExtensionModeEnum = when (this) {

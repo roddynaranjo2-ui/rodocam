@@ -25,3 +25,11 @@ value class CameraEffectId(val value: String)
  * Constant representing no active camera effect.
  */
 val NONE_EFFECT_ID = CameraEffectId("none")
+
+/**
+ * Identifier of the built-in viewfinder assist effect (preview-only GPU shader that draws focus
+ * peaking and/or per-pixel zebra stripes). The effect is selected implicitly when
+ * [ViewfinderAssistSettings.needsShaderEffect] is true and no other effect is active; it never
+ * applies to photo or video outputs.
+ */
+val VIEWFINDER_ASSIST_EFFECT_ID = CameraEffectId("viewfinder_assist")

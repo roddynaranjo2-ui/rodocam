@@ -31,6 +31,7 @@ import com.google.jetpackcamera.core.camera.effects.RenderCallbacks
 import com.google.jetpackcamera.core.camera.effects.ShaderCopy
 import com.google.jetpackcamera.core.camera.effects.SurfaceOutputScope
 import com.google.jetpackcamera.core.camera.effects.SurfaceRequestScope
+import com.google.jetpackcamera.core.camera.effects.ViewfinderAssistEffectConfig
 import com.google.jetpackcamera.core.common.RefCounted
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -50,8 +51,14 @@ private const val TIMESTAMP_UNINITIALIZED = -1L
 /**
  * This is a [SurfaceProcessor] that passes on the same content from the input
  * surface to the output surface. Used to make a copies of surfaces.
+ *
+ * @param assist When non-null, the copy also draws the viewfinder assist shader: focus peaking
+ *   (high-gradient edges tinted) and/or per-pixel zebra stripes over clipped highlights.
  */
-internal class CopyingSurfaceProcessor(coroutineScope: CoroutineScope) : SurfaceProcessor {
+internal class CopyingSurfaceProcessor(
+    coroutineScope: CoroutineScope,
+    private val assist: ViewfinderAssistEffectConfig? = null
+) : SurfaceProcessor {
 
     private val inputSurfaceFlow = MutableStateFlow<SurfaceRequestScope?>(null)
     private val outputSurfaceFlow = MutableStateFlow<SurfaceOutputScope?>(null)
@@ -63,7 +70,10 @@ internal class CopyingSurfaceProcessor(coroutineScope: CoroutineScope) : Surface
                 .collectLatest { surfaceRequestScope ->
                     surfaceRequestScope.withSurfaceRequest { surfaceRequest ->
 
-                        val renderCallbacks = ShaderCopy(surfaceRequest.dynamicRange)
+                        val renderCallbacks = ShaderCopy(
+                            dynamicRange = surfaceRequest.dynamicRange,
+                            assist = assist
+                        )
                         renderCallbacks.renderWithSurfaceRequest(surfaceRequest)
                     }
                 }

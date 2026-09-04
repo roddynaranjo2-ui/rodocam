@@ -53,7 +53,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -70,6 +72,7 @@ import com.google.jetpackcamera.core.camera.InitialRecordingSettings
 import com.google.jetpackcamera.core.camera.VideoRecordingState
 import com.google.jetpackcamera.model.CaptureEvent
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ExternalCaptureMode
 import com.google.jetpackcamera.model.ImageCaptureEvent
 import com.google.jetpackcamera.model.LensToZoom
@@ -94,8 +97,9 @@ import com.google.jetpackcamera.ui.components.capture.TestableSnackbar
 import com.google.jetpackcamera.ui.components.capture.VIDEO_QUALITY_TAG
 import com.google.jetpackcamera.ui.components.capture.VideoQualityIcon
 import com.google.jetpackcamera.ui.components.capture.ManualControlsPanel
+import com.google.jetpackcamera.ui.components.capture.ModeCarousel
 import com.google.jetpackcamera.ui.components.capture.ProModeToggle
-import com.google.jetpackcamera.ui.components.capture.ZoomButtonRow
+import com.google.jetpackcamera.ui.components.capture.ZoomPill
 import com.google.jetpackcamera.ui.components.capture.ZoomStateManager
 import com.google.jetpackcamera.ui.components.capture.debouncedOrientationFlow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.QuickSettingsBottomSheet
@@ -116,12 +120,18 @@ import com.google.jetpackcamera.ui.debug.DebugUiState
 import com.google.jetpackcamera.ui.uistate.SnackBarUiState
 import com.google.jetpackcamera.ui.uistate.capture.AudioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureButtonUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureModeCarouselUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
+import com.google.jetpackcamera.ui.uistate.capture.CarouselCommand
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.ImageWellUiState
 import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
+import com.google.jetpackcamera.ui.uistate.capture.ShootingMode
 import com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomUiState
+import com.google.jetpackcamera.ui.uistate.capture.activeCountdown
+import com.google.jetpackcamera.ui.uistate.capture.isHapticsEnabled
 import com.google.jetpackcamera.ui.uistate.capture.compound.CaptureUiState
 import com.google.jetpackcamera.ui.uistate.capture.compound.QuickSettingsUiState
 import kotlinx.coroutines.flow.transformWhile
@@ -351,10 +361,39 @@ private fun ContentScreen(
         }
     }
 
-    val onFlipCamera = remember {
+    // Viewfinder assists (grid, level, histogram, zebras) and the haptics preference.
+    val viewfinderAssistState = remember {
+        derivedStateOf { currentCaptureUiStateProvider().viewfinderAssistUiState }
+    }
+    // Self-timer: selected duration plus the in-flight countdown drawn over the viewfinder.
+    val captureTimerState = remember {
+        derivedStateOf { currentCaptureUiStateProvider().captureTimerUiState }
+    }
+    val onCancelCountdown: () -> Unit = remember(captureController) {
+        { captureController?.cancelCountdown() }
+    }
+    val hapticFeedback = LocalHapticFeedback.current
+    val performHaptic: (HapticFeedbackType) -> Unit = remember(hapticFeedback) {
+        { type ->
+            if (viewfinderAssistState.value.isHapticsEnabled) {
+                hapticFeedback.performHapticFeedback(type)
+            }
+        }
+    }
+    // One gentle tick per remaining second, like Pixel's timer beeps, honouring the haptics
+    // preference through performHaptic.
+    val remainingCountdownSeconds = captureTimerState.value.activeCountdown?.remainingSeconds
+    LaunchedEffect(remainingCountdownSeconds) {
+        if (remainingCountdownSeconds != null) performHaptic(HapticFeedbackType.TextHandleMove)
+    }
+
+    val onFlipCamera = remember(performHaptic) {
         {
             val state = flipLensState.value
-            if (state is FlipLensUiState.Available) {
+            if (state is FlipLensUiState.Available &&
+                state.availableLensFacings.size > 1
+            ) {
+                performHaptic(HapticFeedbackType.LongPress)
                 quickSettingsController?.setLensFacing(
                     state.selectedLensFacing.flip()
                 )
@@ -465,6 +504,9 @@ private fun ContentScreen(
     val viewfinderLambda = remember(
         previewDisplayState,
         focusMeteringState,
+        viewfinderAssistState,
+        captureTimerState,
+        onCancelCountdown,
         onFlipCamera,
         onTapToFocusLambda,
         onLockFocusAndExposureLambda,
@@ -483,7 +525,10 @@ private fun ContentScreen(
                 onRequestWindowColorMode = onRequestWindowColorMode,
                 focusMeteringUiState = focusMeteringState.value,
                 onLockFocusAndExposure = onLockFocusAndExposureLambda,
-                onDoubleTapZoom = onDoubleTapZoomLambda
+                onDoubleTapZoom = onDoubleTapZoomLambda,
+                viewfinderAssistUiState = viewfinderAssistState.value,
+                captureTimerUiState = captureTimerState.value,
+                onCancelCountdown = onCancelCountdown
             )
         }
     }
@@ -497,16 +542,26 @@ private fun ContentScreen(
     val captureButtonLambda = remember(
         captureButtonState,
         quickSettingsState,
+        captureTimerState,
         quickSettingsController,
-        captureController
+        captureController,
+        performHaptic
     ) {
         @Composable { modifier: Modifier ->
             val quickSettingsUiState = quickSettingsState.value
+            fun selectedTimer(): CaptureTimer =
+                (captureTimerState.value as? CaptureTimerUiState.Available)
+                    ?.selectedTimer ?: CaptureTimer.OFF
             fun runCaptureAction(action: () -> Unit) {
                 if ((quickSettingsUiState as? QuickSettingsUiState.Available)
                         ?.quickSettingsIsOpen == true
                 ) {
                     quickSettingsController?.toggleQuickSettings()
+                }
+                // Pressing the shutter while a self-timer runs cancels it (Pixel behaviour).
+                if (captureController?.isCountingDown() == true) {
+                    captureController.cancelCountdown()
+                    return
                 }
                 action()
             }
@@ -516,7 +571,9 @@ private fun ContentScreen(
                     ?.quickSettingsIsOpen ?: false,
                 onCaptureImage = {
                     runCaptureAction {
-                        captureController?.captureImage(it)
+                        // Pixel: a crisp tick on shutter release.
+                        performHaptic(HapticFeedbackType.Confirm)
+                        captureController?.captureImage(it, selectedTimer())
                     }
                 },
                 onIncrementZoom = { targetZoom ->
@@ -524,10 +581,14 @@ private fun ContentScreen(
                 },
                 onStartVideoRecording = {
                     runCaptureAction {
-                        captureController?.startVideoRecording()
+                        performHaptic(HapticFeedbackType.LongPress)
+                        captureController?.startVideoRecording(selectedTimer())
                     }
                 },
-                onStopVideoRecording = { captureController?.stopVideoRecording() },
+                onStopVideoRecording = {
+                    performHaptic(HapticFeedbackType.Confirm)
+                    captureController?.stopVideoRecording()
+                },
                 onLockVideoRecording = { isLocked ->
                     captureController?.setLockedRecording(isLocked)
                 }
@@ -586,7 +647,7 @@ private fun ContentScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ZoomButtonRow(
+                    ZoomPill(
                         zoomControlUiState = zoomControlState.value,
                         onChangeZoom = onChangeZoomLambda
                     )
@@ -638,14 +699,54 @@ private fun ContentScreen(
     val captureModeToggleState = remember {
         derivedStateOf { currentCaptureUiStateProvider().captureModeToggleUiState }
     }
+    val captureModeCarouselState = remember {
+        derivedStateOf { currentCaptureUiStateProvider().captureModeCarouselUiState }
+    }
+    val onSelectShootingModeLambda: (ShootingMode) -> Unit = remember(
+        captureModeCarouselState,
+        quickSettingsController,
+        manualControlsController
+    ) {
+        { target ->
+            val state = captureModeCarouselState.value
+            if (state is CaptureModeCarouselUiState.Available) {
+                for (command in state.commandsFor(target)) {
+                    when (command) {
+                        is CarouselCommand.SetCaptureMode ->
+                            quickSettingsController?.setCaptureMode(command.captureMode)
+
+                        is CarouselCommand.SetExtensionMode ->
+                            quickSettingsController?.setExtensionMode(command.extensionMode)
+
+                        is CarouselCommand.SetProMode ->
+                            manualControlsController?.setProModeEnabled(command.enabled)
+                    }
+                }
+            }
+        }
+    }
     val captureModeToggleLambda = remember(
         captureModeToggleState,
+        captureModeCarouselState,
+        onSelectShootingModeLambda,
         quickSettingsController,
         snackBarController
     ) {
         @Composable { modifier: Modifier ->
+            val carouselUiState = captureModeCarouselState.value
             val captureModeToggleUiState = captureModeToggleState.value
-            if (captureModeToggleUiState is CaptureModeToggleUiState.Available) {
+            if (carouselUiState is CaptureModeCarouselUiState.Available) {
+                // Pixel-style Photo/Video/Portrait/Night/Pro carousel. The legacy toggle tag is
+                // kept on the container so existing instrumentation keeps finding the control.
+                ModeCarousel(
+                    uiState = carouselUiState,
+                    onSelectMode = onSelectShootingModeLambda,
+                    onModeDisabled = { disableRationale ->
+                        snackBarController?.enqueueDisabledHdrToggleSnackBar(disableRationale)
+                    },
+                    modifier = modifier.testTag(CAPTURE_MODE_TOGGLE_BUTTON)
+                )
+            } else if (captureModeToggleUiState is CaptureModeToggleUiState.Available) {
                 CaptureModeToggleButton(
                     uiState = captureModeToggleUiState,
                     onChangeCaptureMode = { newCaptureMode ->

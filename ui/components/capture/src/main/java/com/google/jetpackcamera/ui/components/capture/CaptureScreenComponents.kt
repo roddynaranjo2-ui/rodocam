@@ -125,9 +125,11 @@ import com.google.jetpackcamera.ui.uistate.capture.CaptureButtonUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState.Unavailable.findSelectableStateFor
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState.Unavailable.isCaptureModeSelectable
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
 import com.google.jetpackcamera.ui.uistate.capture.ElapsedTimeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState
+import com.google.jetpackcamera.ui.uistate.capture.ViewfinderAssistUiState
 import com.google.jetpackcamera.ui.uistate.capture.StabilizationUiState
 import com.google.jetpackcamera.ui.uistate.capture.compound.PreviewDisplayUiState
 import kotlin.time.Duration.Companion.nanoseconds
@@ -548,7 +550,10 @@ fun PreviewDisplay(
     focusMeteringUiState: FocusMeteringUiState,
     modifier: Modifier = Modifier,
     onLockFocusAndExposure: ((x: Float, y: Float) -> Unit)? = null,
-    onDoubleTapZoom: (() -> Unit)? = null
+    onDoubleTapZoom: (() -> Unit)? = null,
+    viewfinderAssistUiState: ViewfinderAssistUiState = ViewfinderAssistUiState.Disabled,
+    captureTimerUiState: CaptureTimerUiState = CaptureTimerUiState.Unavailable,
+    onCancelCountdown: () -> Unit = {}
 ) {
     val aspectRatioUiState = previewDisplayUiState.aspectRatioUiState
     if (aspectRatioUiState !is AspectRatioUiState.Available) {
@@ -695,6 +700,14 @@ fun PreviewDisplay(
                 FocusMeteringIndicator(
                     focusMeteringUiState = focusMeteringUiState,
                     coordinateTransformer = coordinateTransformer
+                )
+                // Grid / level / histogram / zebras share the clipped viewfinder bounds so they
+                // line up with the visible frame.
+                ViewfinderAssistOverlay(uiState = viewfinderAssistUiState)
+                // Self-timer countdown sits on top of everything; a tap cancels the capture.
+                TimerCountdownOverlay(
+                    uiState = captureTimerUiState,
+                    onCancel = onCancelCountdown
                 )
             }
         }

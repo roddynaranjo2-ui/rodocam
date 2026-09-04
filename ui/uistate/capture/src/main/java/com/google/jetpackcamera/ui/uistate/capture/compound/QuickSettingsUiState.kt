@@ -17,6 +17,7 @@ package com.google.jetpackcamera.ui.uistate.capture.compound
 
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
 import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
@@ -43,6 +44,7 @@ sealed interface QuickSettingsUiState {
      * @param flipLensUiState The UI state for the flip lens (front/back camera) button.
      * @param hdrUiState The UI state for the HDR (High Dynamic Range) setting.
      * @param extensionModeUiState The UI state for the CameraX Extensions (Night/Portrait/...) row.
+     * @param captureTimerUiState The UI state for the self-timer (Off / 3 s / 10 s) row.
      * @param quickSettingsIsOpen Indicates whether the quick settings panel is currently open.
      */
     data class Available(
@@ -52,6 +54,7 @@ sealed interface QuickSettingsUiState {
         val flipLensUiState: FlipLensUiState,
         val hdrUiState: HdrUiState,
         val extensionModeUiState: ExtensionModeUiState = ExtensionModeUiState.Unavailable,
+        val captureTimerUiState: CaptureTimerUiState = CaptureTimerUiState.Unavailable,
         val quickSettingsIsOpen: Boolean = false
     ) : QuickSettingsUiState
 

@@ -19,6 +19,7 @@ import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DebugSettings
@@ -36,6 +37,7 @@ import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
 import com.google.jetpackcamera.model.UNLIMITED_VIDEO_DURATION
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 
 /**
  * Data layer representation for settings.
@@ -70,7 +72,14 @@ data class CameraAppSettings(
      * Vendor extension (Night, Portrait/Bokeh, HDR, Face retouch) bound to the session. Persisted
      * so the user returns to the mode they last used, like Pixel Camera remembers Night Sight.
      */
-    val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE
+    val extensionMode: CameraExtensionMode = CameraExtensionMode.NONE,
+    /**
+     * Viewfinder assistance overlays (composition grid, horizon level, histogram, zebras) and
+     * haptic feedback. Persisted.
+     */
+    val viewfinderAssist: ViewfinderAssistSettings = ViewfinderAssistSettings.DEFAULT,
+    /** Self-timer (Off / 3 s / 10 s) applied before photos and video recordings. Persisted. */
+    val captureTimer: CaptureTimer = CaptureTimer.OFF
 )
 
 fun CameraSystemConstraints.forCurrentLens(

@@ -39,6 +39,7 @@ import com.google.jetpackcamera.model.TARGET_FPS_30
 import com.google.jetpackcamera.model.TARGET_FPS_60
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.DisabledRationale.DeviceUnsupportedRationale
 import com.google.jetpackcamera.settings.DisabledRationale.FpsUnsupportedRationale
 import com.google.jetpackcamera.settings.DisabledRationale.StabilizationUnsupportedRationale
@@ -59,6 +60,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -112,7 +114,10 @@ class SettingsViewModel @Inject constructor(
                     updatedSettings.lowLightBoostPriority
                 ),
                 concurrentCameraUiState = getConcurrentCameraUiState(constraints, updatedSettings),
-                imageFormatUiState = getImageFormatUiState(constraints, updatedSettings)
+                imageFormatUiState = getImageFormatUiState(constraints, updatedSettings),
+                viewfinderAssistUiState = ViewfinderAssistUiState.Enabled(
+                    updatedSettings.viewfinderAssist.sanitized()
+                )
             )
         }.stateIn(
             scope = viewModelScope,
@@ -808,6 +813,23 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.updateAudioEnabled(isAudioEnabled)
             Log.d(TAG, "recording audio muted: $isAudioEnabled")
+        }
+    }
+
+    /**
+     * Applies [transform] to the current viewfinder assist settings and persists the result.
+     * Reads the latest persisted value so concurrent toggles do not overwrite each other.
+     */
+    fun updateViewfinderAssist(
+        transform: (ViewfinderAssistSettings) -> ViewfinderAssistSettings
+    ) {
+        viewModelScope.launch {
+            val current = settingsRepository.defaultCameraAppSettings.first().viewfinderAssist
+            val updated = transform(current).sanitized()
+            if (updated != current) {
+                settingsRepository.updateViewfinderAssist(updated)
+                Log.d(TAG, "set viewfinder assist: $updated")
+            }
         }
     }
 

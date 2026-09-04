@@ -22,6 +22,8 @@ import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
+import com.google.jetpackcamera.model.CompositionGrid
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -34,6 +36,7 @@ import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TARGET_FPS_AUTO
 import com.google.jetpackcamera.model.UNLIMITED_VIDEO_DURATION
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.SettingsDataSource
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import kotlinx.coroutines.flow.Flow
@@ -78,6 +81,22 @@ class PrefsDataStoreSettingsDataSource(
             isProModeEnabled = prefs[PreferenceKeys.KEY_PRO_MODE_ENABLED] ?: false,
             extensionMode = prefs[PreferenceKeys.KEY_EXTENSION_MODE]
                 .toEnumOrDefault(CameraExtensionMode.NONE),
+            viewfinderAssist = ViewfinderAssistSettings(
+                grid = prefs[PreferenceKeys.KEY_COMPOSITION_GRID]
+                    .toEnumOrDefault(CompositionGrid.OFF),
+                isLevelEnabled = prefs[PreferenceKeys.KEY_LEVEL_ENABLED] ?: false,
+                isHistogramEnabled = prefs[PreferenceKeys.KEY_HISTOGRAM_ENABLED] ?: false,
+                isZebrasEnabled = prefs[PreferenceKeys.KEY_ZEBRAS_ENABLED] ?: false,
+                zebraThresholdPercent = prefs[PreferenceKeys.KEY_ZEBRA_THRESHOLD]
+                    ?: ViewfinderAssistSettings.DEFAULT_ZEBRA_THRESHOLD_PERCENT,
+                isHapticsEnabled = prefs[PreferenceKeys.KEY_HAPTICS_ENABLED] ?: true,
+                isCoachEnabled = prefs[PreferenceKeys.KEY_COACH_ENABLED] ?: false,
+                isFocusPeakingEnabled =
+                prefs[PreferenceKeys.KEY_FOCUS_PEAKING_ENABLED] ?: false,
+                isTopShotEnabled = prefs[PreferenceKeys.KEY_TOP_SHOT_ENABLED] ?: false
+            ).sanitized(),
+            captureTimer = prefs[PreferenceKeys.KEY_CAPTURE_TIMER]
+                .toEnumOrDefault(CaptureTimer.OFF),
             captureMode = defaultCaptureModeOverride
         )
     }
@@ -178,6 +197,27 @@ class PrefsDataStoreSettingsDataSource(
     override suspend fun updateExtensionMode(extensionMode: CameraExtensionMode) {
         dataStore.edit { prefs ->
             prefs[PreferenceKeys.KEY_EXTENSION_MODE] = extensionMode.name
+        }
+    }
+
+    override suspend fun updateViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings) {
+        val sanitized = viewfinderAssist.sanitized()
+        dataStore.edit { prefs ->
+            prefs[PreferenceKeys.KEY_COMPOSITION_GRID] = sanitized.grid.name
+            prefs[PreferenceKeys.KEY_LEVEL_ENABLED] = sanitized.isLevelEnabled
+            prefs[PreferenceKeys.KEY_HISTOGRAM_ENABLED] = sanitized.isHistogramEnabled
+            prefs[PreferenceKeys.KEY_ZEBRAS_ENABLED] = sanitized.isZebrasEnabled
+            prefs[PreferenceKeys.KEY_ZEBRA_THRESHOLD] = sanitized.zebraThresholdPercent
+            prefs[PreferenceKeys.KEY_HAPTICS_ENABLED] = sanitized.isHapticsEnabled
+            prefs[PreferenceKeys.KEY_COACH_ENABLED] = sanitized.isCoachEnabled
+            prefs[PreferenceKeys.KEY_FOCUS_PEAKING_ENABLED] = sanitized.isFocusPeakingEnabled
+            prefs[PreferenceKeys.KEY_TOP_SHOT_ENABLED] = sanitized.isTopShotEnabled
+        }
+    }
+
+    override suspend fun updateCaptureTimer(captureTimer: CaptureTimer) {
+        dataStore.edit { prefs ->
+            prefs[PreferenceKeys.KEY_CAPTURE_TIMER] = captureTimer.name
         }
     }
 

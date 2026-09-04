@@ -28,6 +28,7 @@ import com.google.jetpackcamera.model.CameraEffectId
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CameraZoomRatio
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DeviceRotation
 import com.google.jetpackcamera.model.DynamicRange
@@ -40,6 +41,7 @@ import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.TestPattern
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.model.CameraAppSettings
 import com.google.jetpackcamera.settings.model.CameraSystemConstraints
 import kotlinx.coroutines.channels.Channel
@@ -194,6 +196,16 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
         currentSettings.update { old ->
             old.copy(extensionMode = extensionMode)
         }
+    }
+
+    override suspend fun setViewfinderAssist(viewfinderAssist: ViewfinderAssistSettings) {
+        currentSettings.update { old ->
+            old.copy(viewfinderAssist = viewfinderAssist.sanitized())
+        }
+    }
+
+    override suspend fun setCaptureTimer(captureTimer: CaptureTimer) {
+        currentSettings.update { old -> old.copy(captureTimer = captureTimer) }
     }
 
     override fun getCurrentCameraState(): StateFlow<CameraState> = _currentCameraState.asStateFlow()

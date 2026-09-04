@@ -50,12 +50,19 @@ import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LowLightBoostPriority
 import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.VideoQuality
+import com.google.jetpackcamera.model.ViewfinderAssistSettings
 import com.google.jetpackcamera.settings.ui.AspectRatioSetting
 import com.google.jetpackcamera.settings.ui.CameraEffectSetting
+import com.google.jetpackcamera.settings.ui.CoachSetting
+import com.google.jetpackcamera.settings.ui.CompositionGridSetting
 import com.google.jetpackcamera.settings.ui.ConcurrentCameraSetting
 import com.google.jetpackcamera.settings.ui.DarkModeSetting
 import com.google.jetpackcamera.settings.ui.DefaultCameraFacing
 import com.google.jetpackcamera.settings.ui.FlashModeSetting
+import com.google.jetpackcamera.settings.ui.FocusPeakingSetting
+import com.google.jetpackcamera.settings.ui.HapticsSetting
+import com.google.jetpackcamera.settings.ui.HistogramSetting
+import com.google.jetpackcamera.settings.ui.HorizonLevelSetting
 import com.google.jetpackcamera.settings.ui.ImageFormatSetting
 import com.google.jetpackcamera.settings.ui.LowLightBoostPrioritySetting
 import com.google.jetpackcamera.settings.ui.MaxVideoDurationSetting
@@ -65,8 +72,10 @@ import com.google.jetpackcamera.settings.ui.SectionHeader
 import com.google.jetpackcamera.settings.ui.SettingsPageHeader
 import com.google.jetpackcamera.settings.ui.StabilizationSetting
 import com.google.jetpackcamera.settings.ui.TargetFpsSetting
+import com.google.jetpackcamera.settings.ui.TopShotSetting
 import com.google.jetpackcamera.settings.ui.VersionInfo
 import com.google.jetpackcamera.settings.ui.VideoQualitySetting
+import com.google.jetpackcamera.settings.ui.ZebrasSetting
 import com.google.jetpackcamera.settings.ui.theme.SettingsPreviewTheme
 
 /**
@@ -98,7 +107,8 @@ fun SettingsScreen(
         setVideoQuality = viewModel::setVideoQuality,
         setLowLightBoostPriority = viewModel::setLowLightBoostPriority,
         setConcurrentCameraMode = viewModel::setConcurrentCameraMode,
-        setImageFormat = viewModel::setImageFormat
+        setImageFormat = viewModel::setImageFormat,
+        updateViewfinderAssist = viewModel::updateViewfinderAssist
     )
     val permissionStates = rememberMultiplePermissionsState(
         permissions =
@@ -136,7 +146,8 @@ private fun SettingsScreen(
     setVideoQuality: (VideoQuality) -> Unit = {},
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit = {},
     setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
-    setImageFormat: (ImageOutputFormat) -> Unit = {}
+    setImageFormat: (ImageOutputFormat) -> Unit = {},
+    updateViewfinderAssist: ((ViewfinderAssistSettings) -> ViewfinderAssistSettings) -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
         rememberTopAppBarState()
@@ -175,7 +186,8 @@ private fun SettingsScreen(
                     setVideoQuality = setVideoQuality,
                     setLowLightBoostPriority = setLowLightBoostPriority,
                     setConcurrentCameraMode = setConcurrentCameraMode,
-                    setImageFormat = setImageFormat
+                    setImageFormat = setImageFormat,
+                    updateViewfinderAssist = updateViewfinderAssist
                 )
             }
         }
@@ -198,7 +210,8 @@ internal fun SettingsList(
     setMaxVideoDuration: (Long) -> Unit = {},
     setDarkMode: (DarkMode) -> Unit = {},
     setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
-    setImageFormat: (ImageOutputFormat) -> Unit = {}
+    setImageFormat: (ImageOutputFormat) -> Unit = {},
+    updateViewfinderAssist: ((ViewfinderAssistSettings) -> ViewfinderAssistSettings) -> Unit = {}
 ) {
     SectionHeader(title = stringResource(id = R.string.section_title_camera_settings))
 
@@ -261,6 +274,49 @@ internal fun SettingsList(
     VideoQualitySetting(
         videQualityUiState = uiState.videoQualityUiState,
         setVideoQuality = setVideoQuality
+    )
+
+    SectionHeader(title = stringResource(id = R.string.section_title_viewfinder_settings))
+
+    CompositionGridSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setGrid = { grid -> updateViewfinderAssist { it.copy(grid = grid) } }
+    )
+
+    HorizonLevelSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isLevelEnabled = on) } }
+    )
+
+    HistogramSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isHistogramEnabled = on) } }
+    )
+
+    ZebrasSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isZebrasEnabled = on) } },
+        setThreshold = { pct -> updateViewfinderAssist { it.copy(zebraThresholdPercent = pct) } }
+    )
+
+    HapticsSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isHapticsEnabled = on) } }
+    )
+
+    CoachSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isCoachEnabled = on) } }
+    )
+
+    FocusPeakingSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isFocusPeakingEnabled = on) } }
+    )
+
+    TopShotSetting(
+        uiState = uiState.viewfinderAssistUiState,
+        setEnabled = { on -> updateViewfinderAssist { it.copy(isTopShotEnabled = on) } }
     )
 
     SectionHeader(title = stringResource(id = R.string.section_title_app_settings))

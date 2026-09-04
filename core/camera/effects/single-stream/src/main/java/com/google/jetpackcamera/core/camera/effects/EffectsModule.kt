@@ -25,7 +25,8 @@ import java.util.AbstractMap
 import javax.inject.Provider
 
 /**
- * Hilt module to bind [SingleStreamEffectProvider] in the [SingletonComponent].
+ * Hilt module to bind [SingleStreamEffectProvider] and [ViewfinderAssistEffectProvider] in the
+ * [SingletonComponent].
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -39,5 +40,16 @@ internal object EffectsModule {
         AbstractMap.SimpleImmutableEntry(
             SingleStreamEffectKey,
             Provider { SingleStreamEffectProvider() }
+        )
+
+    @Provides
+    @IntoSet
+    fun provideViewfinderAssistEffectProviderEntry(): Map.Entry<
+        CameraEffectFeatureKey,
+        @JvmSuppressWildcards Provider<CameraEffectProvider>
+        > =
+        AbstractMap.SimpleImmutableEntry(
+            ViewfinderAssistEffectKey,
+            Provider { ViewfinderAssistEffectProvider() }
         )
 }

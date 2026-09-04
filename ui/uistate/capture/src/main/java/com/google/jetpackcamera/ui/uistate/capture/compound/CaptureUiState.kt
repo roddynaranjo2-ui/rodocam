@@ -21,7 +21,9 @@ import com.google.jetpackcamera.model.VideoQuality
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.AudioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureButtonUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureModeCarouselUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeToggleUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
 import com.google.jetpackcamera.ui.uistate.capture.ElapsedTimeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
@@ -31,6 +33,7 @@ import com.google.jetpackcamera.ui.uistate.capture.ImageWellUiState
 import com.google.jetpackcamera.ui.uistate.capture.ManualControlsUiState
 import com.google.jetpackcamera.ui.uistate.capture.ScreenFlashUiState
 import com.google.jetpackcamera.ui.uistate.capture.StabilizationUiState
+import com.google.jetpackcamera.ui.uistate.capture.ViewfinderAssistUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomUiState
 
@@ -72,6 +75,11 @@ sealed interface CaptureUiState {
      * @property hdrUiState The UI state for the HDR setting.
      * @property focusMeteringUiState The UI state for focus and metering.
      * @property manualControlsUiState The UI state for the Pro (manual) controls panel.
+     * @property viewfinderAssistUiState The UI state for viewfinder overlays (grid, level,
+     *   histogram, zebras) and haptics.
+     * @property captureTimerUiState The UI state for the self-timer and its countdown overlay.
+     * @property captureModeCarouselUiState The UI state for the Photo/Video/Portrait/Night/Pro
+     *   mode carousel shown above the shutter.
      */
     data class Ready(
         val videoRecordingState: VideoRecordingState = VideoRecordingState.Inactive(),
@@ -97,7 +105,11 @@ sealed interface CaptureUiState {
         val hdrUiState: HdrUiState = HdrUiState.Unavailable,
         val focusMeteringUiState: FocusMeteringUiState = FocusMeteringUiState.Unspecified,
         val screenFlashUiState: ScreenFlashUiState = ScreenFlashUiState(),
-        val manualControlsUiState: ManualControlsUiState = ManualControlsUiState.Unavailable
+        val manualControlsUiState: ManualControlsUiState = ManualControlsUiState.Unavailable,
+        val viewfinderAssistUiState: ViewfinderAssistUiState = ViewfinderAssistUiState.Disabled,
+        val captureTimerUiState: CaptureTimerUiState = CaptureTimerUiState.Unavailable,
+        val captureModeCarouselUiState: CaptureModeCarouselUiState =
+            CaptureModeCarouselUiState.Unavailable
     ) : CaptureUiState
 
     companion object

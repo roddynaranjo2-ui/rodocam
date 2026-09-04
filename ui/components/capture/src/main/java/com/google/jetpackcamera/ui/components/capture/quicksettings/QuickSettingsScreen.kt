@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.google.jetpackcamera.model.AspectRatio
 import com.google.jetpackcamera.model.CameraExtensionMode
 import com.google.jetpackcamera.model.CaptureMode
+import com.google.jetpackcamera.model.CaptureTimer
 import com.google.jetpackcamera.model.DynamicRange
 import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.model.ImageOutputFormat
@@ -43,10 +44,12 @@ import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.FlashRow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.HdrRow
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.QuickNavSettings
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.QuickSettingsModalBottomSheet
+import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.TimerRow
 import com.google.jetpackcamera.ui.controller.quicksettings.QuickSettingsController
 import com.google.jetpackcamera.ui.uistate.SingleSelectableUiState
 import com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState
 import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState
+import com.google.jetpackcamera.ui.uistate.capture.CaptureTimerUiState
 import com.google.jetpackcamera.ui.uistate.capture.ExtensionModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
@@ -180,6 +183,14 @@ private fun QuickSettingsContent(
                 extensionModeUiState = quickSettingsUiState.extensionModeUiState
             )
         }
+
+        // Self-timer (photo and video)
+        if (quickSettingsUiState.captureTimerUiState is CaptureTimerUiState.Available) {
+            TimerRow(
+                onSetCaptureTimer = quickSettingsController::setCaptureTimer,
+                captureTimerUiState = quickSettingsUiState.captureTimerUiState
+            )
+        }
     }
 }
 
@@ -202,6 +213,8 @@ class NoOpQuickSettingsController : QuickSettingsController {
     override fun setCaptureMode(captureMode: CaptureMode) {}
 
     override fun setExtensionMode(extensionMode: CameraExtensionMode) {}
+
+    override fun setCaptureTimer(captureTimer: CaptureTimer) {}
 }
 
 @Preview

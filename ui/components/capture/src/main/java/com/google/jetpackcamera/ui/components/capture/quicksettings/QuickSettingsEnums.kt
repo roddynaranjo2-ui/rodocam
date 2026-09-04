@@ -153,6 +153,27 @@ enum class CameraExtensionModeEnum : QuickSettingsEnum {
     }
 }
 
+/**
+ * Quick-settings presentation of [com.google.jetpackcamera.model.CaptureTimer] (self-timer).
+ */
+enum class CameraCaptureTimer : QuickSettingsEnum {
+    OFF {
+        override fun getDrawableResId() = R.drawable.ic_timer_off
+        override fun getTextResId() = R.string.quick_settings_timer_off
+        override fun getDescriptionResId() = R.string.quick_settings_timer_off_description
+    },
+    THREE_SECONDS {
+        override fun getDrawableResId() = R.drawable.ic_timer
+        override fun getTextResId() = R.string.quick_settings_timer_3s
+        override fun getDescriptionResId() = R.string.quick_settings_timer_3s_description
+    },
+    TEN_SECONDS {
+        override fun getDrawableResId() = R.drawable.ic_timer
+        override fun getTextResId() = R.string.quick_settings_timer_10s
+        override fun getDescriptionResId() = R.string.quick_settings_timer_10s_description
+    }
+}
+
 enum class CameraCaptureMode : QuickSettingsEnum {
     STANDARD {
 

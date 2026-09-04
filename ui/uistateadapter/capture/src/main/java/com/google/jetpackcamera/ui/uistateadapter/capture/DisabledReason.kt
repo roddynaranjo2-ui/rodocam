@@ -56,5 +56,8 @@ enum class DisabledReason(
     ),
     LLB_DISABLED_BY_HDR(
         R.string.toast_llb_disabled_by_hdr
+    ),
+    EXTENSION_UNSUPPORTED_IN_CONFIGURATION(
+        R.string.toast_extension_unsupported_in_configuration
     )
 }

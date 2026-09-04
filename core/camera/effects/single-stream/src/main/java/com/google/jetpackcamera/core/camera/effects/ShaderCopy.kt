@@ -33,7 +33,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
-internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallbacks {
+/**
+ * Renders the external camera texture into an output surface. When [assist] is set the fragment
+ * shader additionally draws the viewfinder assist features in the same pass: a 3x3 Sobel filter
+ * on luma that tints strong edges (focus peaking) and/or animated diagonal stripes over pixels
+ * whose luma reaches the zebra threshold.
+ */
+internal class ShaderCopy(
+    private val dynamicRange: DynamicRange,
+    private val assist: ViewfinderAssistEffectConfig? = null
+) : RenderCallbacks {
 
     // Called on worker thread only
     private var externalTextureId: Int = -1
@@ -42,6 +51,27 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
     private var samplerLoc = -1
     private var positionLoc = -1
     private var texCoordLoc = -1
+    private var texelSizeLoc = -1
+    private var peakingColorLoc = -1
+    private var peakingThresholdLoc = -1
+    private var peakingFeatherLoc = -1
+    private var zebraThresholdLoc = -1
+    private var zebraPeriodLoc = -1
+    private var zebraDutyLoc = -1
+    private var zebraAlphaLoc = -1
+    private var zebraPhaseLoc = -1
+    private var inputWidth = 0
+    private var inputHeight = 0
+    private val focusPeaking: FocusPeakingConfig?
+        get() = assist?.peaking
+    private val zebras: ZebraConfig?
+        get() = assist?.zebras
+    private val usePeaking: Boolean
+        get() = focusPeaking != null
+    private val useZebras: Boolean
+        get() = zebras != null
+    private val useAssist: Boolean
+        get() = usePeaking || useZebras
     private val glExtensions: Set<String> by lazy {
         checkGlThread()
         buildSet {
@@ -98,10 +128,11 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
                 } else {
                     DEFAULT_VERTEX_SHADER
                 },
-                if (use10bitPipeline) {
-                    TEN_BIT_FRAGMENT_SHADER
-                } else {
-                    DEFAULT_FRAGMENT_SHADER
+                when {
+                    use10bitPipeline && useAssist -> TEN_BIT_ASSIST_FRAGMENT_SHADER
+                    use10bitPipeline -> TEN_BIT_FRAGMENT_SHADER
+                    useAssist -> DEFAULT_ASSIST_FRAGMENT_SHADER
+                    else -> DEFAULT_FRAGMENT_SHADER
                 }
             )
             loadLocations()
@@ -111,6 +142,8 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
 
     override val createSurfaceTexture
         get() = { width: Int, height: Int ->
+            inputWidth = width
+            inputHeight = height
             SurfaceTexture(externalTextureId).apply {
                 setDefaultBufferSize(width, height)
             }
@@ -163,6 +196,10 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
             )
             checkGlErrorOrThrow("glUniformMatrix4fv")
 
+            if (useAssist) {
+                applyAssistUniforms()
+            }
+
             // Draw the rect.
             GLES20.glDrawArrays(
                 GLES20.GL_TRIANGLE_STRIP,
@@ -173,6 +210,52 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
             )
             checkGlErrorOrThrow("glDrawArrays")
         }
+
+    @WorkerThread
+    private fun applyAssistUniforms() {
+        // Texel size in normalised texture coordinates; fall back to a 720p estimate before the
+        // input size is known so the very first frame still renders sensibly.
+        val w = if (inputWidth > 0) inputWidth else FALLBACK_INPUT_WIDTH
+        val h = if (inputHeight > 0) inputHeight else FALLBACK_INPUT_HEIGHT
+        GLES20.glUniform2f(texelSizeLoc, 1f / w, 1f / h)
+
+        // Focus peaking: a threshold above 1 disables the pass (Sobel magnitude is <= 1).
+        val peaking = focusPeaking
+        if (peaking != null) {
+            GLES20.glUniform3f(
+                peakingColorLoc,
+                peaking.colorRgb[0],
+                peaking.colorRgb[1],
+                peaking.colorRgb[2]
+            )
+            GLES20.glUniform1f(peakingThresholdLoc, peaking.threshold)
+            GLES20.glUniform1f(peakingFeatherLoc, peaking.feather)
+        } else {
+            GLES20.glUniform3f(peakingColorLoc, 0f, 0f, 0f)
+            GLES20.glUniform1f(peakingThresholdLoc, DISABLED_THRESHOLD)
+            GLES20.glUniform1f(peakingFeatherLoc, 0f)
+        }
+
+        // Zebras: stripes are computed in output pixel space so their width does not depend on
+        // the stream resolution; the phase advances with time so the stripes crawl like on a
+        // broadcast monitor. A threshold above 1 disables the pass.
+        val zebra = zebras
+        if (zebra != null) {
+            val periodPx = zebra.stripePeriodPx
+            GLES20.glUniform1f(zebraThresholdLoc, zebra.threshold)
+            GLES20.glUniform1f(zebraPeriodLoc, periodPx)
+            GLES20.glUniform1f(zebraDutyLoc, zebra.stripeDutyCycle)
+            GLES20.glUniform1f(zebraAlphaLoc, zebra.stripeAlpha)
+            GLES20.glUniform1f(zebraPhaseLoc, zebraPhasePx(System.nanoTime(), periodPx))
+        } else {
+            GLES20.glUniform1f(zebraThresholdLoc, DISABLED_THRESHOLD)
+            GLES20.glUniform1f(zebraPeriodLoc, 1f)
+            GLES20.glUniform1f(zebraDutyLoc, 0f)
+            GLES20.glUniform1f(zebraAlphaLoc, 0f)
+            GLES20.glUniform1f(zebraPhaseLoc, 0f)
+        }
+        checkGlErrorOrThrow("assist uniforms")
+    }
 
     @WorkerThread
     fun createTexture() {
@@ -349,6 +432,24 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
         checkLocationOrThrow(texMatrixLoc, "uTexMatrix")
         samplerLoc = GLES20.glGetUniformLocation(programHandle, VAR_TEXTURE)
         checkLocationOrThrow(samplerLoc, VAR_TEXTURE)
+        if (useAssist) {
+            texelSizeLoc = uniformLocation(VAR_TEXEL_SIZE)
+            peakingColorLoc = uniformLocation(VAR_PEAKING_COLOR)
+            peakingThresholdLoc = uniformLocation(VAR_PEAKING_THRESHOLD)
+            peakingFeatherLoc = uniformLocation(VAR_PEAKING_FEATHER)
+            zebraThresholdLoc = uniformLocation(VAR_ZEBRA_THRESHOLD)
+            zebraPeriodLoc = uniformLocation(VAR_ZEBRA_PERIOD)
+            zebraDutyLoc = uniformLocation(VAR_ZEBRA_DUTY)
+            zebraAlphaLoc = uniformLocation(VAR_ZEBRA_ALPHA)
+            zebraPhaseLoc = uniformLocation(VAR_ZEBRA_PHASE)
+        }
+    }
+
+    @WorkerThread
+    private fun uniformLocation(name: String): Int {
+        val location = GLES20.glGetUniformLocation(programHandle, name)
+        checkLocationOrThrow(location, name)
+        return location
     }
 
     @WorkerThread
@@ -483,6 +584,146 @@ internal class ShaderCopy(private val dynamicRange: DynamicRange) : RenderCallba
         
         void main() {
           outColor = yuvToRgb(texture($VAR_TEXTURE, $VAR_TEXTURE_COORD).xyz);
+        }
+            """.trimIndent()
+
+        private const val VAR_TEXEL_SIZE = "uTexelSize"
+        private const val VAR_PEAKING_COLOR = "uPeakingColor"
+        private const val VAR_PEAKING_THRESHOLD = "uPeakingThreshold"
+        private const val VAR_PEAKING_FEATHER = "uPeakingFeather"
+        private const val VAR_ZEBRA_THRESHOLD = "uZebraThreshold"
+        private const val VAR_ZEBRA_PERIOD = "uZebraPeriodPx"
+        private const val VAR_ZEBRA_DUTY = "uZebraDuty"
+        private const val VAR_ZEBRA_ALPHA = "uZebraAlpha"
+        private const val VAR_ZEBRA_PHASE = "uZebraPhasePx"
+        private const val FALLBACK_INPUT_WIDTH = 1280
+        private const val FALLBACK_INPUT_HEIGHT = 720
+        private const val LUMA_WEIGHTS = "vec3(0.299, 0.587, 0.114)"
+
+        /** Threshold that no luma / gradient can reach: disables a pass in the shared shader. */
+        internal const val DISABLED_THRESHOLD = 2f
+
+        /** Stripe crawl speed in output pixels per second. */
+        internal const val ZEBRA_CRAWL_PX_PER_SECOND = 24f
+
+        /**
+         * Phase (in output pixels, `0 until periodPx`) of the zebra stripes at [nowNanos] so that
+         * they crawl at [ZEBRA_CRAWL_PX_PER_SECOND].
+         */
+        internal fun zebraPhasePx(nowNanos: Long, periodPx: Float): Float {
+            if (periodPx <= 0f) return 0f
+            val seconds = (nowNanos / 1_000_000L % 1_000_000L) / 1000.0
+            val phase = (seconds * ZEBRA_CRAWL_PX_PER_SECOND) % periodPx
+            return phase.toFloat()
+        }
+
+        /**
+         * GLSL body shared by both assist shaders. `sampleLuma(offset)` must be defined by the
+         * including shader and return the luma (0..1) at `vTextureCoord + offset`.
+         *
+         * `assistColor(rgb, luma)` applies, in order, the zebra stripes (where `luma` reaches
+         * the zebra threshold) and the focus peaking tint (where the Sobel magnitude exceeds the
+         * peaking threshold). Either pass is disabled by a threshold above 1.
+         */
+        private val ASSIST_GLSL_CORE =
+            """
+        uniform vec2 $VAR_TEXEL_SIZE;
+        uniform vec3 $VAR_PEAKING_COLOR;
+        uniform float $VAR_PEAKING_THRESHOLD;
+        uniform float $VAR_PEAKING_FEATHER;
+        uniform float $VAR_ZEBRA_THRESHOLD;
+        uniform float $VAR_ZEBRA_PERIOD;
+        uniform float $VAR_ZEBRA_DUTY;
+        uniform float $VAR_ZEBRA_ALPHA;
+        uniform float $VAR_ZEBRA_PHASE;
+
+        float peakingMask() {
+          if ($VAR_PEAKING_THRESHOLD > 1.0) {
+            return 0.0;
+          }
+          vec2 t = $VAR_TEXEL_SIZE;
+          float tl = sampleLuma(vec2(-t.x, -t.y));
+          float tc = sampleLuma(vec2( 0.0, -t.y));
+          float tr = sampleLuma(vec2( t.x, -t.y));
+          float ml = sampleLuma(vec2(-t.x,  0.0));
+          float mr = sampleLuma(vec2( t.x,  0.0));
+          float bl = sampleLuma(vec2(-t.x,  t.y));
+          float bc = sampleLuma(vec2( 0.0,  t.y));
+          float br = sampleLuma(vec2( t.x,  t.y));
+          float gx = (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl);
+          float gy = (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr);
+          float magnitude = length(vec2(gx, gy)) * 0.25;
+          return smoothstep(
+            $VAR_PEAKING_THRESHOLD,
+            $VAR_PEAKING_THRESHOLD + max($VAR_PEAKING_FEATHER, 0.001),
+            magnitude
+          );
+        }
+
+        float zebraMask(float luma) {
+          if ($VAR_ZEBRA_THRESHOLD > 1.0 || luma < $VAR_ZEBRA_THRESHOLD) {
+            return 0.0;
+          }
+          // 45-degree stripes in output pixel space, crawling with the phase.
+          float diagonal = gl_FragCoord.x + gl_FragCoord.y + $VAR_ZEBRA_PHASE;
+          float cycle = fract(diagonal / max($VAR_ZEBRA_PERIOD, 1.0));
+          return step(cycle, $VAR_ZEBRA_DUTY) * $VAR_ZEBRA_ALPHA;
+        }
+
+        vec3 assistColor(vec3 rgb, float luma) {
+          // Zebras alternate between the (near white) source and a dark stripe.
+          vec3 striped = mix(rgb, vec3(0.08), zebraMask(luma));
+          return mix(striped, $VAR_PEAKING_COLOR, peakingMask());
+        }
+            """.trimIndent()
+
+        /** Viewfinder assist on the 8-bit path: samples RGB, derives luma with BT.601 weights. */
+        private val DEFAULT_ASSIST_FRAGMENT_SHADER =
+            """
+        #extension GL_OES_EGL_image_external : require
+        precision mediump float;
+        varying vec2 $VAR_TEXTURE_COORD;
+        uniform samplerExternalOES $VAR_TEXTURE;
+        float sampleLuma(vec2 o) {
+            return dot(texture2D($VAR_TEXTURE, $VAR_TEXTURE_COORD + o).rgb, $LUMA_WEIGHTS);
+        }
+        $ASSIST_GLSL_CORE
+        void main() {
+            vec4 color = texture2D($VAR_TEXTURE, $VAR_TEXTURE_COORD);
+            float luma = dot(color.rgb, $LUMA_WEIGHTS);
+            gl_FragColor = vec4(assistColor(color.rgb, luma), color.a);
+        }
+            """.trimIndent()
+
+        /** Viewfinder assist on the 10-bit YUV path: luma is the Y channel directly. */
+        private val TEN_BIT_ASSIST_FRAGMENT_SHADER =
+            """
+        #version 300 es
+        #extension GL_EXT_YUV_target : require
+        precision mediump float;
+        uniform __samplerExternal2DY2YEXT $VAR_TEXTURE;
+        in vec2 $VAR_TEXTURE_COORD;
+        out vec3 outColor;
+        float sampleLuma(vec2 o) {
+          return texture($VAR_TEXTURE, $VAR_TEXTURE_COORD + o).x;
+        }
+        $ASSIST_GLSL_CORE
+
+        vec3 yuvToRgb(vec3 yuv) {
+          const vec3 yuvOffset = vec3(0.0625, 0.5, 0.5);
+          const mat3 yuvToRgbColorTransform = mat3(
+            1.1689f, 1.1689f, 1.1689f,
+            0.0000f, -0.1881f, 2.1502f,
+            1.6853f, -0.6530f, 0.0000f
+          );
+          return clamp(yuvToRgbColorTransform * (yuv - yuvOffset), 0.0, 1.0);
+        }
+
+        void main() {
+          vec3 yuv = texture($VAR_TEXTURE, $VAR_TEXTURE_COORD).xyz;
+          // Y is limited range (16..235 of 255): normalise so the zebra threshold matches 8-bit.
+          float luma = clamp((yuv.x - 0.0625) / 0.8588, 0.0, 1.0);
+          outColor = assistColor(yuvToRgb(yuv), luma);
         }
             """.trimIndent()
 

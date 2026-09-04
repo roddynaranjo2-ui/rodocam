@@ -212,6 +212,9 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 
+    // Memory leak detection (debug builds only; StrictMode is enabled in the Application).
+    debugImplementation(libs.leakcanary.android)
+
     // Compose - Integration with ViewModels
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

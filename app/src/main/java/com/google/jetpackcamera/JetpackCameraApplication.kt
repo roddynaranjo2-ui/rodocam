@@ -16,10 +16,53 @@
 package com.google.jetpackcamera
 
 import android.app.Application
+import android.os.Build
+import android.os.StrictMode
+import android.util.Log
 import dagger.hilt.android.HiltAndroidApp
+
+private const val TAG = "JetpackCameraApp"
 
 /**
  * [Application] class for JetpackCameraApp.
+ *
+ * Debug builds enable [StrictMode] so main-thread disk/network access, leaked closables and
+ * unsafe intent launches are logged (never fatal) while developing; LeakCanary is pulled in
+ * through `debugImplementation` and needs no code. Release builds are untouched.
  */
 @HiltAndroidApp
-class JetpackCameraApplication : Application()
+class JetpackCameraApplication : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        if (BuildConfig.DEBUG) {
+            enableStrictMode()
+        }
+    }
+
+    private fun enableStrictMode() {
+        StrictMode.setThreadPolicy(
+            StrictMode.ThreadPolicy.Builder()
+                .detectDiskReads()
+                .detectDiskWrites()
+                .detectNetwork()
+                .detectCustomSlowCalls()
+                .penaltyLog()
+                .build()
+        )
+        StrictMode.setVmPolicy(
+            StrictMode.VmPolicy.Builder()
+                .detectLeakedClosableObjects()
+                .detectLeakedRegistrationObjects()
+                .detectActivityLeaks()
+                .apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        detectUnsafeIntentLaunch()
+                    }
+                }
+                .penaltyLog()
+                .build()
+        )
+        Log.i(TAG, "StrictMode enabled (debug build)")
+    }
+}
