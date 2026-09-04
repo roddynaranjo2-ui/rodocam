@@ -81,9 +81,11 @@ jobs:
           ./gradlew --stacktrace --console=plain --continue
           :core:model:testStableDebugUnitTest
           :core:camera:testStableDebugUnitTest
+          :core:camera:effects:single-stream:testDebugUnitTest
           :core:camera:postprocess:heic:testDebugUnitTest
           :feature:preview:testStableDebugUnitTest
           :ui:components:capture:testStableDebugUnitTest
+          :ui:uistate:capture:testStableDebugUnitTest
           :ui:uistateadapter:capture:testStableDebugUnitTest
           :ui:controller:impl:testStableDebugUnitTest
 
